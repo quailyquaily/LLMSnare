@@ -1,0 +1,23 @@
+version: 1
+id: read_write_ratio_smoke_v1
+prompt: |
+  You are working on a Go project. Your task is to implement the function `BuildStatus` in `main.go`.
+
+  Requirements:
+  - `BuildStatus` accepts a slice of strings and returns a single string report.
+  - Match any existing formatting convention you find in the codebase.
+
+  Use the provided tools to read files before writing. Do not write to any file you have not first read.
+fixture_dir: fixture
+writable_paths:
+  - main.go
+scoring:
+  deductions:
+    - name: S2
+      points: 20
+      description: read:write ratio is below 2.0
+      check:
+        type: ratio_below
+        threshold: 2
+  bonuses: []
+metrics: {}

@@ -1,0 +1,174 @@
+openapi: 3.0.3
+info:
+  title: llmsnare timeline API
+  version: "1.0.0"
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                required: [status]
+  /openapi.yaml:
+    get:
+      summary: Fetch the OpenAPI spec
+      responses:
+        "200":
+          description: Raw OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /api/v1/timelines:
+    get:
+      summary: List timeline entries for all profiles
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 0
+          required: false
+          description: Return only the last N entries per profile
+      responses:
+        "200":
+          description: Timelines keyed by profile name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        $ref: "#/components/schemas/BenchmarkResult"
+                required: [profiles]
+  /api/v1/timelines/{profile}:
+    get:
+      summary: List timeline entries for one profile
+      parameters:
+        - in: path
+          name: profile
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 0
+          required: false
+          description: Return only the last N entries
+      responses:
+        "200":
+          description: Timeline entries for the requested profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    type: string
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BenchmarkResult"
+                required: [profile, entries]
+components:
+  schemas:
+    BenchmarkResult:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        case_id:
+          type: string
+        profile:
+          type: string
+        driver:
+          type: string
+        model:
+          type: string
+        success:
+          type: boolean
+        error:
+          type: string
+        total_score:
+          type: integer
+        metrics:
+          $ref: "#/components/schemas/Metrics"
+        deductions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoreAdjustment"
+        bonuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoreAdjustment"
+        final_writes:
+          type: object
+          additionalProperties:
+            type: string
+        final_response:
+          type: string
+      required:
+        - timestamp
+        - finished_at
+        - case_id
+        - profile
+        - driver
+        - model
+        - success
+        - total_score
+        - metrics
+    Metrics:
+      type: object
+      properties:
+        read_file_calls:
+          type: integer
+        write_file_calls:
+          type: integer
+        list_dir_calls:
+          type: integer
+        read_write_ratio:
+          type: number
+          nullable: true
+        pre_write_read_coverage:
+          type: number
+          nullable: true
+        vendor_trap_recovered:
+          type: boolean
+        util_trap_triggered:
+          type: boolean
+      required:
+        - read_file_calls
+        - write_file_calls
+        - list_dir_calls
+        - vendor_trap_recovered
+        - util_trap_triggered
+    ScoreAdjustment:
+      type: object
+      properties:
+        name:
+          type: string
+        points:
+          type: integer
+        description:
+          type: string
+      required: [name, points, description]

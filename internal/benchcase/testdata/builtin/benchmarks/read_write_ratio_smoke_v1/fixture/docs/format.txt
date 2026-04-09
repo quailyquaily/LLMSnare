@@ -1,0 +1,2 @@
+Status format:
+items: <comma-separated values>
