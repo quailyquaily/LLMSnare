@@ -1,4 +1,4 @@
-# llmsnare
+# LLMSnare
 
 `llmsnare` is a Go CLI for running a context-fidelity benchmark against LLM profiles.
 
