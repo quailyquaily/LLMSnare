@@ -18,7 +18,10 @@ const (
 	defaultListenAddress   = "127.0.0.1:8787"
 	defaultTimeout         = 300 * time.Second
 	defaultMaxOutputTokens = 4096
+	defaultOpenAIAPI       = "https://api.openai.com/v1"
 	defaultAnthropicAPI    = "https://api.anthropic.com"
+	defaultGeminiAPI       = "https://generativelanguage.googleapis.com"
+	defaultCloudflareAPI   = "https://api.cloudflare.com/client/v4"
 )
 
 var envPattern = regexp.MustCompile(`^\$\{([A-Z0-9_]+)\}$`)
@@ -32,10 +35,7 @@ type Config struct {
 }
 
 type ServeConfig struct {
-	Interval time.Duration `yaml:"-"`
-	Listen   string        `yaml:"listen"`
-
-	IntervalRaw string `yaml:"interval"`
+	Listen string `yaml:"listen"`
 }
 
 type StorageConfig struct {
@@ -43,10 +43,12 @@ type StorageConfig struct {
 }
 
 type Profile struct {
-	Driver          string        `yaml:"driver"`
+	Provider        string        `yaml:"provider"`
 	Model           string        `yaml:"model"`
 	Endpoint        string        `yaml:"endpoint"`
 	APIKey          string        `yaml:"api_key"`
+	AccountID       string        `yaml:"account_id"`
+	APIToken        string        `yaml:"api_token"`
 	Timeout         time.Duration `yaml:"-"`
 	Temperature     float64       `yaml:"temperature"`
 	MaxOutputTokens int           `yaml:"max_output_tokens"`
@@ -98,18 +100,11 @@ func (c *Config) normalize(baseDir string) error {
 	if len(c.Profiles) == 0 {
 		return fmt.Errorf("profiles must not be empty")
 	}
-	if c.Serve.IntervalRaw == "" {
-		return fmt.Errorf("serve.interval is required")
-	}
-	interval, err := time.ParseDuration(c.Serve.IntervalRaw)
-	if err != nil {
-		return fmt.Errorf("parse serve.interval: %w", err)
-	}
-	c.Serve.Interval = interval
 	if c.Serve.Listen == "" {
 		c.Serve.Listen = defaultListenAddress
 	}
 
+	var err error
 	if c.Storage.TimelineDir == "" {
 		c.Storage.TimelineDir = defaultTimelineDir
 	}
@@ -140,26 +135,63 @@ func (c *Config) normalize(baseDir string) error {
 }
 
 func (p *Profile) normalize() error {
-	switch p.Driver {
-	case "openai", "anthropic", "gemini":
+	p.Provider = strings.TrimSpace(p.Provider)
+	switch p.Provider {
+	case "openai", "anthropic", "gemini", "cloudflare":
 	default:
-		return fmt.Errorf("driver must be one of openai, anthropic, gemini")
+		return fmt.Errorf("provider must be one of openai, anthropic, gemini, cloudflare")
 	}
 	if strings.TrimSpace(p.Model) == "" {
 		return fmt.Errorf("model is required")
 	}
-	if strings.TrimSpace(p.Endpoint) == "" {
-		return fmt.Errorf("endpoint is required")
-	}
-	if p.Driver == "anthropic" && strings.TrimRight(p.Endpoint, "/") != defaultAnthropicAPI {
-		return fmt.Errorf("anthropic endpoint overrides are not supported by the configured uniai provider")
-	}
+	p.Endpoint = strings.TrimSpace(p.Endpoint)
 
-	resolvedKey, err := expandAPIKey(p.APIKey)
-	if err != nil {
-		return err
+	switch p.Provider {
+	case "openai":
+		if p.Endpoint == "" {
+			p.Endpoint = defaultOpenAIAPI
+		}
+		resolvedKey, err := expandRequiredEnvRef("api_key", p.APIKey)
+		if err != nil {
+			return err
+		}
+		p.APIKey = resolvedKey
+	case "anthropic":
+		if p.Endpoint == "" {
+			p.Endpoint = defaultAnthropicAPI
+		}
+		if strings.TrimRight(p.Endpoint, "/") != defaultAnthropicAPI {
+			return fmt.Errorf("anthropic endpoint overrides are not supported by the configured uniai provider")
+		}
+		resolvedKey, err := expandRequiredEnvRef("api_key", p.APIKey)
+		if err != nil {
+			return err
+		}
+		p.APIKey = resolvedKey
+	case "gemini":
+		if p.Endpoint == "" {
+			p.Endpoint = defaultGeminiAPI
+		}
+		resolvedKey, err := expandRequiredEnvRef("api_key", p.APIKey)
+		if err != nil {
+			return err
+		}
+		p.APIKey = resolvedKey
+	case "cloudflare":
+		if p.Endpoint == "" {
+			p.Endpoint = defaultCloudflareAPI
+		}
+		resolvedAccountID, err := expandRequiredEnvRef("account_id", p.AccountID)
+		if err != nil {
+			return err
+		}
+		resolvedToken, err := expandRequiredEnvRef("api_token", p.APIToken)
+		if err != nil {
+			return err
+		}
+		p.AccountID = resolvedAccountID
+		p.APIToken = resolvedToken
 	}
-	p.APIKey = resolvedKey
 
 	if p.TimeoutRaw == "" {
 		p.Timeout = defaultTimeout
@@ -176,9 +208,9 @@ func (p *Profile) normalize() error {
 	return nil
 }
 
-func expandAPIKey(value string) (string, error) {
+func expandRequiredEnvRef(fieldName, value string) (string, error) {
 	if strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("api_key is required")
+		return "", fmt.Errorf("%s is required", fieldName)
 	}
 	matches := envPattern.FindStringSubmatch(value)
 	if len(matches) != 2 {
@@ -186,7 +218,7 @@ func expandAPIKey(value string) (string, error) {
 	}
 	resolved, ok := os.LookupEnv(matches[1])
 	if !ok {
-		return "", fmt.Errorf("api_key environment variable %q is not set", matches[1])
+		return "", fmt.Errorf("%s environment variable %q is not set", fieldName, matches[1])
 	}
 	return resolved, nil
 }
@@ -195,7 +227,6 @@ func TemplateYAML() string {
 	return `version: 1
 
 serve:
-  interval: 6h
   listen: "127.0.0.1:8787"
 
 storage:
@@ -203,9 +234,8 @@ storage:
 
 profiles:
   openai_gpt4o:
-    driver: openai
+    provider: openai
     model: "gpt-4o"
-    endpoint: "https://api.openai.com/v1"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
     temperature: 0

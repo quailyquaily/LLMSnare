@@ -12,6 +12,7 @@ import (
 
 	"llmsnare/internal/benchmark"
 	"llmsnare/internal/config"
+	"llmsnare/internal/storage"
 
 	"github.com/spf13/cobra"
 )
@@ -19,6 +20,7 @@ import (
 func newRunCommand() *cobra.Command {
 	var asJSON bool
 	var caseRef string
+	var persist bool
 
 	cmd := &cobra.Command{
 		Use:   "run [profile_name]",
@@ -52,6 +54,12 @@ func newRunCommand() *cobra.Command {
 				results = append(results, result)
 			}
 
+			if persist {
+				if err := persistResults(cfg.Storage.TimelineDir, results); err != nil {
+					return err
+				}
+			}
+
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -72,8 +80,19 @@ func newRunCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print results as JSON")
+	cmd.Flags().BoolVar(&persist, "persist", false, "Append results to timeline storage")
 	cmd.Flags().StringVar(&caseRef, "case", "", "Case ID or case directory path")
 	return cmd
+}
+
+func persistResults(timelineDir string, results []benchmark.Result) error {
+	store := storage.New(timelineDir)
+	for _, result := range results {
+		if err := store.Append(result); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type namedProfile struct {
@@ -126,7 +145,7 @@ func renderTextResult(cmd *cobra.Command, result benchmark.Result) {
 		{"Score", style.score(formatPercent(result.NormalizedScore), result.NormalizedScore)},
 		{"Raw score", formatRawScore(result.RawScore, result.MaxScore)},
 		{"Duration", formatDuration(result.FinishedAt.Sub(result.Timestamp))},
-		{"Driver", result.Driver},
+		{"Provider", result.Provider},
 		{"Model", result.Model},
 		{"Endpoint", result.Endpoint},
 		{"Tool calls", fmt.Sprintf("%d", len(result.ToolCalls))},

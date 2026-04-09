@@ -101,11 +101,9 @@ components:
           type: string
         profile:
           type: string
-        driver:
+        provider:
           type: string
         model:
-          type: string
-        endpoint:
           type: string
         success:
           type: boolean
@@ -128,21 +126,14 @@ components:
         bonuses:
           type: array
           items:
-            $ref: "#/components/schemas/ScoreAdjustment"
-        final_writes:
-          type: object
-          additionalProperties:
-            type: string
-        final_response:
-          type: string
+            $ref: "#/components/schemas/BonusAdjustment"
       required:
         - timestamp
         - finished_at
         - case_id
         - profile
-        - driver
+        - provider
         - model
-        - endpoint
         - success
         - total_score
         - raw_score
@@ -178,3 +169,11 @@ components:
         description:
           type: string
       required: [name, points, description]
+    BonusAdjustment:
+      type: object
+      properties:
+        name:
+          type: string
+        points:
+          type: integer
+      required: [name, points]

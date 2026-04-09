@@ -60,7 +60,7 @@ func TestRunWithClientReportsProgress(t *testing.T) {
 		context.Background(),
 		caseDef,
 		"demo_profile",
-		config.Profile{Driver: "openai", Model: "gpt-4o"},
+		config.Profile{Provider: "openai", Model: "gpt-4o"},
 		client,
 	)
 	if err != nil {

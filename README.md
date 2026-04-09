@@ -40,6 +40,14 @@ List all cases under the default cases directory:
 llmsnare cases
 ```
 
+### List Profiles
+
+List all configured profiles:
+
+```bash
+llmsnare profiles --config ./config.yaml
+```
+
 ### Run Once
 
 Run one profile:
@@ -60,6 +68,12 @@ Print JSON:
 llmsnare run openai_gpt4o --config ./config.yaml --json
 ```
 
+Persist the result to timeline storage:
+
+```bash
+llmsnare run openai_gpt4o --config ./config.yaml --case read_write_ratio_sample --persist
+```
+
 Run a case by case ID:
 
 ```bash
@@ -78,13 +92,11 @@ llmsnare run openai_gpt4o \
 
 ### Serve
 
-Run on a schedule and expose timelines over HTTP:
+Expose timelines over HTTP:
 
 ```bash
 llmsnare serve --config ./config.yaml
 ```
-
-`serve` accepts the same `--case` flag.
 
 ## Config
 
@@ -94,7 +106,6 @@ Example:
 version: 1
 
 serve:
-  interval: 6h
   listen: "127.0.0.1:8787"
 
 storage:
@@ -102,9 +113,8 @@ storage:
 
 profiles:
   openai_gpt4o:
-    driver: openai
+    provider: openai
     model: "gpt-4o"
-    endpoint: "https://api.openai.com/v1"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
     temperature: 0
@@ -115,12 +125,35 @@ Notes:
 
 - benchmark cases live under `benchmarks/` relative to the config file directory
 - `--case` accepts either a case ID or a case directory path
-- `run` and `serve` require `--case`
+- `run` requires `--case`
 - if `benchmarks/` is empty, run `llmsnare init`
 - if cases already exist, run `llmsnare cases` and then pass `--case`
+- `run --persist` appends JSONL entries under `storage.timeline_dir`
+- use Linux `cron` to schedule repeated runs
 - `api_key` supports `${ENV_NAME}` expansion
-- `endpoint` is required for every profile
+- `endpoint` is optional; if omitted, a provider-specific default is used
+- `cloudflare` profiles use `account_id` plus `api_token` instead of `api_key`
 - Anthropic endpoint overrides are currently rejected because the configured `uniai` provider does not expose a custom base URL
+
+Example Linux `cron` entry:
+
+```cron
+0 */6 * * * /usr/local/bin/llmsnare run openai_gpt4o --config /etc/llmsnare/config.yaml --case read_write_ratio_sample --persist
+```
+
+Cloudflare example:
+
+```yaml
+profiles:
+  cf_llama:
+    provider: cloudflare
+    model: "@cf/meta/llama-3.1-8b-instruct"
+    account_id: "${CLOUDFLARE_ACCOUNT_ID}"
+    api_token: "${CLOUDFLARE_API_TOKEN}"
+    timeout: 300s
+    temperature: 0
+    max_output_tokens: 4096
+```
 
 ## Case Files
 
@@ -165,6 +198,27 @@ When running `serve`, the daemon exposes:
 - `GET /openapi.yaml`
 - `GET /api/v1/timelines`
 - `GET /api/v1/timelines/{profile}`
+
+Response shapes:
+
+- `GET /healthz` returns `{"status":"ok"}`
+- `GET /api/v1/timelines` returns `{"profiles":{"<profile>":[BenchmarkResult,...]}}`
+- `GET /api/v1/timelines/{profile}` returns `{"profile":"<profile>","entries":[BenchmarkResult,...]}`
+
+Each `BenchmarkResult` includes:
+
+- run metadata: `timestamp`, `finished_at`, `case_id`, `profile`, `provider`, `model`, `success`, `error`
+- scores: `total_score`, `raw_score`, `max_score`, `normalized_score`
+- automatic metrics: `read_file_calls`, `write_file_calls`, `list_dir_calls`, `read_write_ratio`, `pre_write_read_coverage`
+- scoring details: `deductions`, `bonuses`
+
+The API intentionally omits:
+
+- `endpoint`
+- `final_writes`
+- `final_response`
+- `bonuses[].description`
+- `tool_calls`
 
 Default listen address:
 

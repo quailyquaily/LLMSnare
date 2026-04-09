@@ -41,7 +41,7 @@ LLM Context Fidelity Benchmark
 这里要分清两层：
 
 - benchmark 内容层：虚拟文件系统、mock 源码、mock 工具调用
-- 宿主程序层：真实 CLI、真实配置文件、真实定时调度、真实 HTTP API
+- 宿主程序层：真实 CLI、真实配置文件、真实 HTTP API
 
 也就是说，模型看到的 `main.go`、`utils/utils.go`、`vendor/...` 都来自 `rootfs/` 里的 benchmark 数据；但 `llmsnare` 这个程序本身需要在真实环境中运行。
 
@@ -61,12 +61,10 @@ llmsnare serve
 
 行为：
 
-- 读取配置文件中的一组 LLM profile
-- 按固定时间间隔重复执行 benchmark
-- 每次运行后记录 score 结果
+- 读取 timeline 存储目录
 - 提供一个 HTTP API，用来返回各个 LLM profile 的得分 timeline
 
-`serve` 模式下的 timeline 不能只放在内存里，还需要持久化到磁盘。
+`serve` 不负责调度 benchmark。定时执行由 Linux 系统 `cron` 调用 `llmsnare run --persist` 完成。
 
 持久化要求：
 
@@ -155,11 +153,11 @@ llmsnare init
 
 它至少需要能描述下面这些信息：
 
-- benchmark 的调度参数，例如 `serve` 模式下的运行间隔
 - timeline 持久化目录
 - 一组 LLM profile
 - 每个 profile 的模型名称
-- 每个 profile 的 API endpoint
+- 每个 profile 的 provider
+- 每个 profile 的 API endpoint 覆盖配置
 - 每个 profile 的 API key
 
 这里把 v1 配置结构定下来，不再停留在“建议”层面。
@@ -170,7 +168,6 @@ llmsnare init
 version: 1
 
 serve:
-  interval: 6h
   listen: "127.0.0.1:8787"
 
 storage:
@@ -178,20 +175,27 @@ storage:
 
 profiles:
   openai_gpt4o:
-    driver: openai
+    provider: openai
     model: "gpt-4o"
-    endpoint: "https://api.openai.com/v1"
     api_key: "${OPENAI_API_KEY}"
-    timeout: 90s
+    timeout: 300s
     temperature: 0
     max_output_tokens: 4096
 
   claude_sonnet:
-    driver: anthropic
+    provider: anthropic
     model: "claude-3-5-sonnet-latest"
-    endpoint: "https://api.anthropic.com"
     api_key: "${ANTHROPIC_API_KEY}"
-    timeout: 90s
+    timeout: 300s
+    temperature: 0
+    max_output_tokens: 4096
+
+  cf_llama:
+    provider: cloudflare
+    model: "@cf/meta/llama-3.1-8b-instruct"
+    account_id: "${CLOUDFLARE_ACCOUNT_ID}"
+    api_token: "${CLOUDFLARE_API_TOKEN}"
+    timeout: 300s
     temperature: 0
     max_output_tokens: 4096
 ```
@@ -201,7 +205,7 @@ profiles:
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `version` | integer | 是 | 配置版本。v1 固定写 `1`。 |
-| `serve` | object | 是 | `llmsnare serve` 的调度和监听配置。 |
+| `serve` | object | 是 | `llmsnare serve` 的监听配置。 |
 | `storage` | object | 是 | 持久化配置。当前主要是 timeline 目录。 |
 | `profiles` | map[string]object | 是 | LLM profile 集合，key 就是 profile 名称。 |
 
@@ -209,7 +213,6 @@ profiles:
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `serve.interval` | string | 是 | 无 | 定时执行间隔，使用 Go duration 语法，例如 `10m`、`1h`、`6h`。 |
 | `serve.listen` | string | 否 | `127.0.0.1:8787` | HTTP API 监听地址。 |
 
 ### `storage` 字段
@@ -226,11 +229,13 @@ profiles:
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `driver` | string | 是 | 无 | 访问该模型所用的协议驱动。v1 先约定支持 `openai`、`anthropic`、`gemini`。 |
+| `provider` | string | 是 | 无 | 模型供应商。v1 支持 `openai`、`anthropic`、`gemini`、`cloudflare`。 |
 | `model` | string | 是 | 无 | 目标模型名。 |
-| `endpoint` | string | 是 | 无 | API 基地址。 |
-| `api_key` | string | 是 | 无 | API key 原文，或 `${ENV_NAME}` 形式的环境变量引用。 |
-| `timeout` | string | 否 | `90s` | 单次 benchmark 运行该 profile 的请求超时，使用 Go duration 语法。 |
+| `endpoint` | string | 否 | provider-specific default | API 基地址覆盖值。 |
+| `api_key` | string | 条件必填 | 无 | `openai`、`anthropic`、`gemini` 使用的 API key，支持 `${ENV_NAME}`。 |
+| `account_id` | string | 条件必填 | 无 | `cloudflare` 使用的 Account ID，支持 `${ENV_NAME}`。 |
+| `api_token` | string | 条件必填 | 无 | `cloudflare` 使用的 API token，支持 `${ENV_NAME}`。 |
+| `timeout` | string | 否 | `300s` | 单次 benchmark 运行该 profile 的请求超时，使用 Go duration 语法。 |
 | `temperature` | number | 否 | `0` | 采样温度。v1 默认用 `0`，尽量减少波动。 |
 | `max_output_tokens` | integer | 否 | `4096` | 单次生成允许的最大输出 token 数。 |
 
@@ -244,10 +249,13 @@ profiles:
 
 - `profiles` 的 key 必须唯一，且要能直接作为 `llmsnare run <profile_name>` 的 `<profile_name>`。
 - 当 `llmsnare run` 不带参数时，系统运行全部 profile；执行顺序按 profile 名称字典序稳定排序。
-- `endpoint` 表示基地址，不包含具体 benchmark 路径参数；具体请求路径由 `driver` 决定。
-- `serve.interval` 和 `timeout` 都按 Go duration 解析；解析失败属于配置错误。
+- `provider` 表示供应商，不再使用 `driver` 这个名字。
+- `endpoint` 是 provider-specific base URL 覆盖值；省略时使用默认值。
+- `cloudflare` 需要 `account_id` 和 `api_token`，不使用 `api_key`。
+- `timeout` 按 Go duration 解析；解析失败属于配置错误。
 - `temperature` 和 `max_output_tokens` 是 profile 级参数，不提供全局覆盖。
 - v1 不支持 profile 继承、include、锚点合并后的二次展开这类高级配置能力。
+- 定时执行由外部 Linux `cron` 负责，不放进 `config.yaml`。
 
 ### 路径规则
 
@@ -263,7 +271,6 @@ profiles:
 version: 1
 
 serve:
-  interval: 6h
   listen: "127.0.0.1:8787"
 
 storage:
@@ -271,11 +278,10 @@ storage:
 
 profiles:
   openai_gpt4o:
-    driver: openai
+    provider: openai
     model: "gpt-4o"
-    endpoint: "https://api.openai.com/v1"
     api_key: "${OPENAI_API_KEY}"
-    timeout: 90s
+    timeout: 300s
     temperature: 0
     max_output_tokens: 4096
 ```
@@ -290,7 +296,7 @@ profiles:
 - 同一供应商下不同模型
 - 同一模型的不同 endpoint 或代理地址
 
-`serve` 和 `run` 都以 profile 为执行单位。
+`run` 以 profile 为执行单位；`serve` 只负责读取 timeline 并提供 HTTP API。
 
 ---
 

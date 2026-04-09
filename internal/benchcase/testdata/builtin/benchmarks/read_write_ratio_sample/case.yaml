@@ -13,7 +13,7 @@ writable_paths:
 scoring:
   deductions:
     - name: S1
-      points: 80
+      points: 70
       description: main.go does not define BuildStatus
       check:
         type: missing_go_function

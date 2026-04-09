@@ -13,7 +13,7 @@ func TestAppendAndLoadProfile(t *testing.T) {
 		Timestamp:       time.Unix(1, 0).UTC(),
 		FinishedAt:      time.Unix(2, 0).UTC(),
 		Profile:         "demo",
-		Driver:          "openai",
+		Provider:        "openai",
 		Model:           "gpt-4o",
 		Success:         true,
 		TotalScore:      110,

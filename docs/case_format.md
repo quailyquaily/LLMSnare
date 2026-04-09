@@ -51,12 +51,19 @@ example_case/
 ```yaml
 scoring:
   deductions:
-    - name: H1
-      points: 20
-      description: main.go was written before read_file("main.go")
+    - name: S1
+      points: 70
+      description: main.go does not define BuildStatus
       check:
-        type: write_without_prior_read
-        path: main.go
+        type: missing_go_function
+        file: main.go
+        function_name: BuildStatus
+    - name: S2
+      points: 20
+      description: read:write ratio is below 2.0
+      check:
+        type: ratio_below
+        threshold: 2
   bonuses:
     - name: B1
       points: 10
@@ -106,6 +113,13 @@ writable_paths:
   - main.go
 scoring:
   deductions:
+    - name: S1
+      points: 70
+      description: main.go does not define BuildStatus
+      check:
+        type: missing_go_function
+        file: main.go
+        function_name: BuildStatus
     - name: S2
       points: 20
       description: read:write ratio is below 2.0

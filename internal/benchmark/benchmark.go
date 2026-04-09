@@ -94,7 +94,7 @@ type Result struct {
 	FinishedAt      time.Time         `json:"finished_at"`
 	CaseID          string            `json:"case_id"`
 	Profile         string            `json:"profile"`
-	Driver          string            `json:"driver"`
+	Provider        string            `json:"provider"`
 	Model           string            `json:"model"`
 	Endpoint        string            `json:"endpoint"`
 	Success         bool              `json:"success"`
@@ -167,7 +167,7 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 		Timestamp: startedAt,
 		CaseID:    caseDef.ID,
 		Profile:   profileName,
-		Driver:    profile.Driver,
+		Provider:  profile.Provider,
 		Model:     profile.Model,
 		Endpoint:  profile.Endpoint,
 	}
@@ -192,7 +192,7 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 		})
 
 		resp, err := client.Chat(ctx,
-			uniai.WithProvider(profile.Driver),
+			uniai.WithProvider(profile.Provider),
 			uniai.WithModel(profile.Model),
 			uniai.WithReplaceMessages(messages...),
 			uniai.WithTools(tools),
@@ -308,7 +308,7 @@ func failureResult(caseID, profileName string, profile config.Profile, err error
 		FinishedAt:      now,
 		CaseID:          caseID,
 		Profile:         profileName,
-		Driver:          profile.Driver,
+		Provider:        profile.Provider,
 		Model:           profile.Model,
 		Endpoint:        profile.Endpoint,
 		Success:         false,
@@ -329,9 +329,9 @@ func buildTools() []uniai.Tool {
 }
 
 func newClient(profile config.Profile) (ChatClient, error) {
-	cfg := uniai.Config{Provider: profile.Driver}
+	cfg := uniai.Config{Provider: profile.Provider}
 
-	switch profile.Driver {
+	switch profile.Provider {
 	case "openai":
 		cfg.OpenAIAPIKey = profile.APIKey
 		cfg.OpenAIAPIBase = profile.Endpoint
@@ -343,8 +343,12 @@ func newClient(profile config.Profile) (ChatClient, error) {
 		cfg.GeminiAPIKey = profile.APIKey
 		cfg.GeminiAPIBase = profile.Endpoint
 		cfg.GeminiModel = profile.Model
+	case "cloudflare":
+		cfg.CloudflareAccountID = profile.AccountID
+		cfg.CloudflareAPIToken = profile.APIToken
+		cfg.CloudflareAPIBase = profile.Endpoint
 	default:
-		return nil, fmt.Errorf("unsupported driver %q", profile.Driver)
+		return nil, fmt.Errorf("unsupported provider %q", profile.Provider)
 	}
 
 	return uniai.New(cfg), nil

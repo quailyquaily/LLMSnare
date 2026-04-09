@@ -23,7 +23,7 @@ Build the initial `llmsnare` Go application described in [init_requirement.md](.
 - Run the single benchmark rootfs from the requirement
 - Load the benchmark definition from a case YAML file
 - Load rootfs files from the fixed `rootfs/` directory in each case
-- Persist serve-mode timeline entries as JSONL
+- Persist `run --persist` timeline entries as JSONL
 - Expose timeline data over HTTP
 - Produce and serve an OpenAPI document
 

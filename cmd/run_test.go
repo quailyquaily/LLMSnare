@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"llmsnare/internal/benchmark"
+	"llmsnare/internal/storage"
 
 	"github.com/spf13/cobra"
 )
@@ -23,7 +24,7 @@ func TestRenderTextResultUsesReadableSections(t *testing.T) {
 		FinishedAt:      time.Unix(2, 250_000_000).UTC(),
 		CaseID:          "read_write_ratio_sample",
 		Profile:         "demo_profile",
-		Driver:          "openai",
+		Provider:        "openai",
 		Model:           "gpt-4o",
 		Endpoint:        "https://api.openai.com/v1",
 		Success:         true,
@@ -58,6 +59,7 @@ func TestRenderTextResultUsesReadableSections(t *testing.T) {
 		"Deductions",
 		"Bonuses",
 		"Tool calls",
+		"Provider",
 		"Endpoint",
 		"https://api.openai.com/v1",
 		"88.00%",
@@ -127,5 +129,38 @@ func TestRunProgressReporterIsDisabledForJSON(t *testing.T) {
 	}
 	if reporter := runProgressReporter(cmd, false, 1, 1); reporter == nil {
 		t.Fatal("expected progress reporter in text mode")
+	}
+}
+
+func TestPersistResultsAppendsTimelineEntries(t *testing.T) {
+	dir := t.TempDir()
+	results := []benchmark.Result{
+		{
+			Timestamp:       time.Unix(1, 0).UTC(),
+			FinishedAt:      time.Unix(2, 0).UTC(),
+			Profile:         "demo",
+			Provider:        "openai",
+			Model:           "gpt-4o",
+			Endpoint:        "https://api.openai.com/v1",
+			Success:         true,
+			RawScore:        90,
+			MaxScore:        100,
+			NormalizedScore: 90,
+		},
+	}
+
+	if err := persistResults(dir, results); err != nil {
+		t.Fatalf("persistResults returned error: %v", err)
+	}
+
+	loaded, err := storage.New(dir).LoadProfile("demo", 0)
+	if err != nil {
+		t.Fatalf("LoadProfile returned error: %v", err)
+	}
+	if len(loaded) != 1 {
+		t.Fatalf("len(loaded) = %d, want 1", len(loaded))
+	}
+	if got := loaded[0].NormalizedScore; got != 90 {
+		t.Fatalf("normalized score = %v, want 90", got)
 	}
 }
