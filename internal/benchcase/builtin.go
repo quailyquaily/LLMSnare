@@ -11,14 +11,14 @@ import (
 var builtinFS embed.FS
 
 type Scaffold struct {
-	CaseRelPath  string
-	CaseYAML     string
-	FixtureFiles map[string]string
+	CaseRelPath string
+	CaseYAML    string
+	RootFSFiles map[string]string
 }
 
 func DefaultScaffolds() ([]Scaffold, error) {
 	casePaths := []string{
-		DefaultCaseRelPath,
+		BuiltinCaseRelPath,
 	}
 
 	scaffolds := make([]Scaffold, 0, len(casePaths))
@@ -39,15 +39,15 @@ func loadEmbeddedScaffold(caseRelPath string) (Scaffold, error) {
 		return Scaffold{}, fmt.Errorf("read embedded case %q: %w", caseRelPath, err)
 	}
 
-	fixtureRoot := path.Join(path.Dir(caseFSPath), DefaultFixtureRelDir())
-	fixtureFiles, err := loadFixtureFilesFromFS(builtinFS, fixtureRoot)
+	rootFSDir := path.Join(path.Dir(caseFSPath), DefaultRootFSRelDir())
+	rootFSFiles, err := loadRootFSFilesFromFS(builtinFS, rootFSDir)
 	if err != nil {
-		return Scaffold{}, fmt.Errorf("load embedded fixture for %q: %w", caseRelPath, err)
+		return Scaffold{}, fmt.Errorf("load embedded rootfs for %q: %w", caseRelPath, err)
 	}
 
 	return Scaffold{
-		CaseRelPath:  caseRelPath,
-		CaseYAML:     string(data),
-		FixtureFiles: fixtureFiles,
+		CaseRelPath: caseRelPath,
+		CaseYAML:    string(data),
+		RootFSFiles: rootFSFiles,
 	}, nil
 }

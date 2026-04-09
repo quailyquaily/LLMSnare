@@ -32,28 +32,83 @@ type ChatClient interface {
 	Chat(ctx context.Context, opts ...uniai.ChatOption) (*uniai.ChatResult, error)
 }
 
-type Runner struct{}
+type ProgressEventKind string
 
-func NewRunner() *Runner {
-	return &Runner{}
+const (
+	ProgressRunStarted   ProgressEventKind = "run_started"
+	ProgressRoundStarted ProgressEventKind = "round_started"
+	ProgressToolBatch    ProgressEventKind = "tool_batch"
+	ProgressToolExecuted ProgressEventKind = "tool_executed"
+	ProgressRunFinished  ProgressEventKind = "run_finished"
+)
+
+type ProgressEvent struct {
+	Kind            ProgressEventKind
+	CaseID          string
+	Profile         string
+	Round           int
+	MaxRounds       int
+	Tool            string
+	ToolPath        string
+	ToolCalls       int
+	Elapsed         time.Duration
+	RawScore        int
+	MaxScore        int
+	NormalizedScore float64
+	Success         bool
+	Error           string
+}
+
+type ProgressReporter func(ProgressEvent)
+
+type RunnerOption func(*Runner)
+
+type Runner struct {
+	progress ProgressReporter
+}
+
+func NewRunner(opts ...RunnerOption) *Runner {
+	runner := &Runner{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(runner)
+		}
+	}
+	return runner
+}
+
+func WithProgressReporter(reporter ProgressReporter) RunnerOption {
+	return func(r *Runner) {
+		r.progress = reporter
+	}
+}
+
+func (r *Runner) report(event ProgressEvent) {
+	if r.progress != nil {
+		r.progress(event)
+	}
 }
 
 type Result struct {
-	Timestamp     time.Time         `json:"timestamp"`
-	FinishedAt    time.Time         `json:"finished_at"`
-	CaseID        string            `json:"case_id"`
-	Profile       string            `json:"profile"`
-	Driver        string            `json:"driver"`
-	Model         string            `json:"model"`
-	Success       bool              `json:"success"`
-	Error         string            `json:"error,omitempty"`
-	TotalScore    int               `json:"total_score"`
-	Metrics       Metrics           `json:"metrics"`
-	Deductions    []ScoreAdjustment `json:"deductions,omitempty"`
-	Bonuses       []ScoreAdjustment `json:"bonuses,omitempty"`
-	ToolCalls     []ToolCallLog     `json:"tool_calls"`
-	FinalWrites   map[string]string `json:"final_writes,omitempty"`
-	FinalResponse string            `json:"final_response,omitempty"`
+	Timestamp       time.Time         `json:"timestamp"`
+	FinishedAt      time.Time         `json:"finished_at"`
+	CaseID          string            `json:"case_id"`
+	Profile         string            `json:"profile"`
+	Driver          string            `json:"driver"`
+	Model           string            `json:"model"`
+	Endpoint        string            `json:"endpoint"`
+	Success         bool              `json:"success"`
+	Error           string            `json:"error,omitempty"`
+	TotalScore      int               `json:"total_score"`
+	RawScore        int               `json:"raw_score"`
+	MaxScore        int               `json:"max_score"`
+	NormalizedScore float64           `json:"normalized_score"`
+	Metrics         Metrics           `json:"metrics"`
+	Deductions      []ScoreAdjustment `json:"deductions,omitempty"`
+	Bonuses         []ScoreAdjustment `json:"bonuses,omitempty"`
+	ToolCalls       []ToolCallLog     `json:"tool_calls"`
+	FinalWrites     map[string]string `json:"final_writes,omitempty"`
+	FinalResponse   string            `json:"final_response,omitempty"`
 }
 
 type Metrics struct {
@@ -62,8 +117,6 @@ type Metrics struct {
 	ListDirCalls         int      `json:"list_dir_calls"`
 	ReadWriteRatio       *float64 `json:"read_write_ratio"`
 	PreWriteReadCoverage *float64 `json:"pre_write_read_coverage"`
-	VendorTrapRecovered  bool     `json:"vendor_trap_recovered"`
-	UtilTrapTriggered    bool     `json:"util_trap_triggered"`
 }
 
 type ScoreAdjustment struct {
@@ -91,6 +144,12 @@ func (r *Runner) Run(ctx context.Context, caseDef benchcase.Case, profileName st
 	client, err := newClient(profile)
 	if err != nil {
 		result := failureResult(caseDef.ID, profileName, profile, err)
+		r.report(ProgressEvent{
+			Kind:    ProgressRunFinished,
+			CaseID:  caseDef.ID,
+			Profile: profileName,
+			Error:   err.Error(),
+		})
 		return result, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, profile.Timeout)
@@ -110,11 +169,28 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 		Profile:   profileName,
 		Driver:    profile.Driver,
 		Model:     profile.Model,
+		Endpoint:  profile.Endpoint,
 	}
+
+	r.report(ProgressEvent{
+		Kind:      ProgressRunStarted,
+		CaseID:    caseDef.ID,
+		Profile:   profileName,
+		MaxRounds: maxRounds,
+	})
 
 	var finalText string
 	var runErr error
 	for round := 0; round < maxRounds; round++ {
+		roundNumber := round + 1
+		r.report(ProgressEvent{
+			Kind:      ProgressRoundStarted,
+			CaseID:    caseDef.ID,
+			Profile:   profileName,
+			Round:     roundNumber,
+			MaxRounds: maxRounds,
+		})
+
 		resp, err := client.Chat(ctx,
 			uniai.WithProvider(profile.Driver),
 			uniai.WithModel(profile.Model),
@@ -126,7 +202,7 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 			uniai.WithMaxTokens(profile.MaxOutputTokens),
 		)
 		if err != nil {
-			runErr = fmt.Errorf("chat round %d: %w", round+1, err)
+			runErr = fmt.Errorf("chat round %d: %w", roundNumber, err)
 			break
 		}
 
@@ -134,6 +210,15 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 			finalText = resp.Text
 			break
 		}
+
+		r.report(ProgressEvent{
+			Kind:      ProgressToolBatch,
+			CaseID:    caseDef.ID,
+			Profile:   profileName,
+			Round:     roundNumber,
+			MaxRounds: maxRounds,
+			ToolCalls: len(resp.ToolCalls),
+		})
 
 		messages = append(messages, uniai.Message{
 			Role:      uniai.RoleAssistant,
@@ -144,6 +229,24 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 		for _, toolCall := range resp.ToolCalls {
 			reply := fs.execute(toolCall.Function.Name, toolCall.Function.Arguments)
 			messages = append(messages, uniai.ToolResult(toolCall.ID, reply.modelOutput))
+
+			if len(fs.logs) == 0 {
+				continue
+			}
+			last := fs.logs[len(fs.logs)-1]
+			event := ProgressEvent{
+				Kind:      ProgressToolExecuted,
+				CaseID:    caseDef.ID,
+				Profile:   profileName,
+				Round:     roundNumber,
+				MaxRounds: maxRounds,
+				Tool:      last.Tool,
+				ToolPath:  stringValue(last.Input["path"]),
+			}
+			if last.IsError {
+				event.Error = fmt.Sprint(last.Result)
+			}
+			r.report(event)
 		}
 	}
 
@@ -157,6 +260,9 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 	result.Deductions = scored.Deductions
 	result.Bonuses = scored.Bonuses
 	result.TotalScore = scored.TotalScore
+	result.RawScore = scored.TotalScore
+	result.MaxScore = scored.MaxScore
+	result.NormalizedScore = scored.NormalizedScore
 
 	if runErr == nil && len(fs.logs) == 0 {
 		runErr = fmt.Errorf("benchmark ended without any tool calls")
@@ -166,25 +272,51 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 		result.Success = false
 		result.Error = runErr.Error()
 		result.TotalScore = 0
+		result.RawScore = 0
+		result.NormalizedScore = 0
+		r.report(ProgressEvent{
+			Kind:            ProgressRunFinished,
+			CaseID:          caseDef.ID,
+			Profile:         profileName,
+			Elapsed:         result.FinishedAt.Sub(startedAt),
+			RawScore:        result.RawScore,
+			MaxScore:        result.MaxScore,
+			NormalizedScore: result.NormalizedScore,
+			Error:           result.Error,
+		})
 		return result, nil
 	}
 
 	result.Success = true
+	r.report(ProgressEvent{
+		Kind:            ProgressRunFinished,
+		CaseID:          caseDef.ID,
+		Profile:         profileName,
+		Elapsed:         result.FinishedAt.Sub(startedAt),
+		RawScore:        result.RawScore,
+		MaxScore:        result.MaxScore,
+		NormalizedScore: result.NormalizedScore,
+		Success:         true,
+	})
 	return result, nil
 }
 
 func failureResult(caseID, profileName string, profile config.Profile, err error) Result {
 	now := time.Now().UTC()
 	return Result{
-		Timestamp:  now,
-		FinishedAt: now,
-		CaseID:     caseID,
-		Profile:    profileName,
-		Driver:     profile.Driver,
-		Model:      profile.Model,
-		Success:    false,
-		Error:      err.Error(),
-		TotalScore: 0,
+		Timestamp:       now,
+		FinishedAt:      now,
+		CaseID:          caseID,
+		Profile:         profileName,
+		Driver:          profile.Driver,
+		Model:           profile.Model,
+		Endpoint:        profile.Endpoint,
+		Success:         false,
+		Error:           err.Error(),
+		TotalScore:      0,
+		RawScore:        0,
+		MaxScore:        0,
+		NormalizedScore: 0,
 	}
 }
 
@@ -226,8 +358,8 @@ type virtualFS struct {
 }
 
 func newVirtualFS(caseDef benchcase.Case, start time.Time) *virtualFS {
-	files := make(map[string]string, len(caseDef.FixtureFiles))
-	for p, content := range caseDef.FixtureFiles {
+	files := make(map[string]string, len(caseDef.RootFSFiles))
+	for p, content := range caseDef.RootFSFiles {
 		files[p] = content
 	}
 	return &virtualFS{files: files, now: start}
@@ -288,17 +420,48 @@ func (v *virtualFS) record(name string, input map[string]any, response toolRespo
 }
 
 func (v *virtualFS) list(dir string) ([]string, bool) {
-	children := make([]string, 0)
+	target := normalizeDir(dir)
+	prefix := ""
+	if target != "." {
+		prefix = target + "/"
+	}
+
+	children := make(map[string]struct{})
 	for filePath := range v.files {
-		if path.Dir(filePath) == strings.TrimSuffix(dir, "/") {
-			children = append(children, path.Base(filePath))
+		filePath = normalizeFile(filePath)
+		if filePath == "" {
+			continue
+		}
+
+		rest := ""
+		switch {
+		case target == ".":
+			rest = filePath
+		case strings.HasPrefix(filePath, prefix):
+			rest = strings.TrimPrefix(filePath, prefix)
+		default:
+			continue
+		}
+
+		child := rest
+		if idx := strings.IndexByte(rest, '/'); idx >= 0 {
+			child = rest[:idx]
+		}
+		if child != "" {
+			children[child] = struct{}{}
 		}
 	}
+
 	if len(children) == 0 {
 		return nil, false
 	}
-	sort.Strings(children)
-	return children, true
+
+	entries := make([]string, 0, len(children))
+	for child := range children {
+		entries = append(entries, child)
+	}
+	sort.Strings(entries)
+	return entries, true
 }
 
 func (v *virtualFS) finalWrites() map[string]string {
@@ -320,10 +483,12 @@ func (v *virtualFS) finalWrites() map[string]string {
 }
 
 type scoredResult struct {
-	Metrics    Metrics
-	Deductions []ScoreAdjustment
-	Bonuses    []ScoreAdjustment
-	TotalScore int
+	Metrics         Metrics
+	Deductions      []ScoreAdjustment
+	Bonuses         []ScoreAdjustment
+	TotalScore      int
+	MaxScore        int
+	NormalizedScore float64
 }
 
 type evaluationContext struct {
@@ -350,12 +515,35 @@ func scoreResult(caseDef benchcase.Case, result Result, fs *virtualFS) scoredRes
 		total += item.Points
 	}
 
-	return scoredResult{
-		Metrics:    ctx.metrics,
-		Deductions: deductions,
-		Bonuses:    bonuses,
-		TotalScore: total,
+	maxScore := 100
+	for _, rule := range caseDef.Scoring.Bonuses {
+		if rule.Points > 0 {
+			maxScore += rule.Points
+		}
 	}
+
+	return scoredResult{
+		Metrics:         ctx.metrics,
+		Deductions:      deductions,
+		Bonuses:         bonuses,
+		TotalScore:      total,
+		MaxScore:        maxScore,
+		NormalizedScore: normalizeScore(total, maxScore),
+	}
+}
+
+func normalizeScore(rawScore, maxScore int) float64 {
+	if maxScore <= 0 {
+		return 0
+	}
+	clamped := rawScore
+	if clamped < 0 {
+		clamped = 0
+	}
+	if clamped > maxScore {
+		clamped = maxScore
+	}
+	return (float64(clamped) / float64(maxScore)) * 100
 }
 
 func buildEvaluationContext(caseDef benchcase.Case, result Result, fs *virtualFS) evaluationContext {
@@ -435,13 +623,6 @@ func buildEvaluationContext(caseDef benchcase.Case, result Result, fs *virtualFS
 		},
 	}
 
-	if caseDef.Metrics.VendorTrapRecovered != nil {
-		ctx.metrics.VendorTrapRecovered = len(evaluateCheck(ctx, *caseDef.Metrics.VendorTrapRecovered)) > 0
-	}
-	if caseDef.Metrics.UtilTrapTriggered != nil {
-		ctx.metrics.UtilTrapTriggered = len(evaluateCheck(ctx, *caseDef.Metrics.UtilTrapTriggered)) > 0
-	}
-
 	return ctx
 }
 
@@ -498,10 +679,6 @@ func evaluateCheck(ctx evaluationContext, check benchcase.Check) []string {
 		if !hasSuccessfulListDir(ctx.fs.logs, check.Path) {
 			return []string{fmt.Sprintf("%s was never listed", check.Path)}
 		}
-	case "unrecovered_wrong_path":
-		if attemptedPath(ctx.fs.logs, "read_file", check.WrongPath) && !ctx.successfulReads[check.CorrectPath] {
-			return []string{fmt.Sprintf("%s was not recovered to %s", check.WrongPath, check.CorrectPath)}
-		}
 	case "duplicate_read_same_content":
 		return duplicateReadMatches(ctx.fs.logs)
 	case "ratio_below":
@@ -516,10 +693,6 @@ func evaluateCheck(ctx evaluationContext, check benchcase.Check) []string {
 		if firstWriteBeforeRequiredReads(ctx, check.Paths) {
 			return []string{"the first write happened before all required reads"}
 		}
-	case "recovered_wrong_path":
-		if hasSuccessfulListDir(ctx.fs.logs, check.ListDir) && ctx.successfulReads[check.CorrectPath] {
-			return []string{"vendor trap was recovered"}
-		}
 	case "read_all_before_first_write":
 		if readAllBeforeFirstWrite(ctx.fs.logs, check.Paths) {
 			return []string{"all required files were read before the first write"}
@@ -528,17 +701,21 @@ func evaluateCheck(ctx evaluationContext, check benchcase.Check) []string {
 		if fileContainsAll(ctx.fileContent(check.File), check.Substrings) {
 			return []string{"file contains all required substrings"}
 		}
-	case "missing_call_or_forbidden_patterns":
-		if missingCallOrForbiddenPatterns(ctx.fileContent(check.File), check.RequiredCalls, check.ForbiddenRegex) {
-			return []string{"required helper call is missing or forbidden patterns were found"}
+	case "file_missing_any_substrings":
+		if fileMissingAnySubstrings(ctx.fileContent(check.File), check.Substrings) {
+			return []string{"file is missing required substrings"}
 		}
-	case "document_hallucination_without_reference_read":
-		typeName := check.TypeName
-		if typeName == "" {
-			typeName = "Document"
+	case "file_matches_all_regex":
+		if fileMatchesAllRegex(ctx.fileContent(check.File), check.Regex) {
+			return []string{"file matches all required regex patterns"}
 		}
-		if !ctx.successfulReads[check.ReferenceFile] && detectDocumentHallucination(ctx.fileContent(check.File), ctx.caseDef.FixtureFiles[check.ReferenceFile], typeName) {
-			return []string{fmt.Sprintf("%s appears to invent %s without reading %s", check.File, typeName, check.ReferenceFile)}
+	case "file_matches_any_regex":
+		if fileMatchesAnyRegex(ctx.fileContent(check.File), check.Regex) {
+			return []string{"file matches forbidden regex patterns"}
+		}
+	case "missing_go_function":
+		if !goFileDefinesFunction(ctx.fileContent(check.File), check.FunctionName) {
+			return []string{fmt.Sprintf("%s does not define function %s", check.File, check.FunctionName)}
 		}
 	}
 	return nil
@@ -665,13 +842,22 @@ func fileContainsAll(content string, substrings []string) bool {
 	return len(substrings) > 0
 }
 
-func missingCallOrForbiddenPatterns(content string, requiredCalls, forbiddenRegex []string) bool {
-	for _, call := range requiredCalls {
-		if !strings.Contains(content, call) {
-			return true
+func fileMissingAnySubstrings(content string, substrings []string) bool {
+	return len(substrings) > 0 && !fileContainsAll(content, substrings)
+}
+
+func fileMatchesAllRegex(content string, patterns []string) bool {
+	for _, pattern := range patterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil || !re.MatchString(content) {
+			return false
 		}
 	}
-	for _, pattern := range forbiddenRegex {
+	return len(patterns) > 0
+}
+
+func fileMatchesAnyRegex(content string, patterns []string) bool {
+	for _, pattern := range patterns {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
 			continue
@@ -683,62 +869,29 @@ func missingCallOrForbiddenPatterns(content string, requiredCalls, forbiddenRege
 	return false
 }
 
-func detectDocumentHallucination(mainContent, referenceSource, typeName string) bool {
-	if strings.Contains(mainContent, "type "+typeName+" struct") {
-		return true
+func goFileDefinesFunction(source, functionName string) bool {
+	if strings.TrimSpace(source) == "" || strings.TrimSpace(functionName) == "" {
+		return false
 	}
 
-	validFields, err := benchcase.ExtractStructFields(referenceSource, typeName)
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", source, parser.AllErrors)
 	if err != nil {
 		return false
 	}
 
-	file, err := parser.ParseFile(token.NewFileSet(), "main.go", mainContent, 0)
-	if err != nil {
-		return false
-	}
-
-	hallucinated := false
-	ast.Inspect(file, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.TypeSpec:
-			if typed.Name.Name == typeName {
-				hallucinated = true
-				return false
-			}
-		case *ast.CompositeLit:
-			if !isNamedTypeExpr(typed.Type, typeName) {
-				return true
-			}
-			for _, elt := range typed.Elts {
-				keyValue, ok := elt.(*ast.KeyValueExpr)
-				if !ok {
-					continue
-				}
-				key, ok := keyValue.Key.(*ast.Ident)
-				if !ok {
-					continue
-				}
-				if _, ok := validFields[key.Name]; !ok {
-					hallucinated = true
-					return false
-				}
-			}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
 		}
-		return true
-	})
-	return hallucinated
-}
-
-func isNamedTypeExpr(expr ast.Expr, typeName string) bool {
-	switch typed := expr.(type) {
-	case *ast.Ident:
-		return typed.Name == typeName
-	case *ast.SelectorExpr:
-		return typed.Sel.Name == typeName
-	default:
-		return false
+		if fn.Recv != nil || fn.Name == nil || fn.Name.Name != functionName {
+			continue
+		}
+		if fn.Body != nil {
+			return true
+		}
 	}
+	return false
 }
 
 func hasSuccessfulListDir(logs []ToolCallLog, dir string) bool {
@@ -751,23 +904,10 @@ func hasSuccessfulListDir(logs []ToolCallLog, dir string) bool {
 	return false
 }
 
-func attemptedPath(logs []ToolCallLog, tool, targetPath string) bool {
-	targetPath = normalizeFile(targetPath)
-	for _, log := range logs {
-		if log.Tool == tool && normalizeFile(stringValue(log.Input["path"])) == targetPath {
-			return true
-		}
-	}
-	return false
-}
-
 func normalizeDir(value string) string {
 	cleaned := path.Clean(strings.TrimSpace(value))
-	if cleaned == "." || cleaned == "/" {
-		return ""
-	}
-	if !strings.HasSuffix(cleaned, "/") {
-		cleaned += "/"
+	if cleaned == "." || cleaned == "/" || cleaned == "" {
+		return "."
 	}
 	return cleaned
 }

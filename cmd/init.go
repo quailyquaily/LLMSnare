@@ -87,14 +87,14 @@ func writeDefaultCaseScaffolds(root string, scaffolds []benchcase.Scaffold) ([]s
 			return nil, fmt.Errorf("write benchmark case: %w", err)
 		}
 
-		fixtureRoot := filepath.Join(filepath.Dir(casePath), benchcase.DefaultFixtureRelDir())
-		for relPath, content := range scaffold.FixtureFiles {
-			target := filepath.Join(fixtureRoot, filepath.FromSlash(relPath))
+		rootFSDir := filepath.Join(filepath.Dir(casePath), benchcase.DefaultRootFSRelDir())
+		for relPath, content := range scaffold.RootFSFiles {
+			target := filepath.Join(rootFSDir, filepath.FromSlash(relPath))
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return nil, fmt.Errorf("create fixture directory: %w", err)
+				return nil, fmt.Errorf("create rootfs directory: %w", err)
 			}
 			if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
-				return nil, fmt.Errorf("write fixture file: %w", err)
+				return nil, fmt.Errorf("write rootfs file: %w", err)
 			}
 		}
 		written = append(written, casePath)

@@ -43,7 +43,7 @@ LLM Context Fidelity Benchmark
 - benchmark 内容层：虚拟文件系统、mock 源码、mock 工具调用
 - 宿主程序层：真实 CLI、真实配置文件、真实定时调度、真实 HTTP API
 
-也就是说，模型看到的 `main.go`、`utils/utils.go`、`vendor/...` 都是 fixture 数据；但 `llmsnare` 这个程序本身需要在真实环境中运行。
+也就是说，模型看到的 `main.go`、`utils/utils.go`、`vendor/...` 都来自 `rootfs/` 里的 benchmark 数据；但 `llmsnare` 这个程序本身需要在真实环境中运行。
 
 ---
 
@@ -101,7 +101,7 @@ llmsnare serve
 - profile 名称
 - 每次运行时间
 - 每次运行总分
-- 必要时附带关键指标，例如 `read:write ratio`、`vendor trap recovery rate`
+- 必要时附带关键指标，例如 `read:write ratio`、`pre-write read coverage`
 
 ### 2. 一次性运行模式
 
@@ -534,22 +534,29 @@ total read_file calls / total write_file calls
 files written that were first read / total files written
 ```
 
-### 3. vendor trap recovery rate
+### 3. read_file_calls
 
 定义：
 
-- 是否先调用了 `list_dir`
-- 是否识别出提示词里的文件名不对
-- 是否最终读取了正确的 vendor 文件
+```text
+total successful and failed read_file calls
+```
 
-这是一个布尔值。
-
-### 4. util trap triggered
+### 4. write_file_calls
 
 定义：
 
-- 模型是否自己重写了 `SortAndDedupe`
-- 可以通过比较写入内容来判断
+```text
+total successful and failed write_file calls
+```
+
+### 5. list_dir_calls
+
+定义：
+
+```text
+total successful and failed list_dir calls
+```
 
 这是一个布尔值。
 
@@ -575,7 +582,7 @@ H7 的判断方法：
 
 ## 实验执行说明
 
-后续需要用完全相同的 fixture、完全相同的 prompt 和完全相同的工具接口，去跑多个模型，例如：
+后续需要用完全相同的 `rootfs/` 内容、完全相同的 prompt 和完全相同的工具接口，去跑多个模型，例如：
 
 - GPT-4o
 - Claude 3.5 Sonnet
@@ -603,8 +610,9 @@ H7 的判断方法：
 - 汇总分数
 - `read:write ratio`
 - `pre-write read coverage`
-- `vendor trap recovery rate`
-- `util trap triggered`
+- `read_file_calls`
+- `write_file_calls`
+- `list_dir_calls`
 
 ---
 
@@ -623,5 +631,5 @@ H7 的判断方法：
 这个初版不做下面这些事：
 
 - 不要求把 mock 文件系统同步到真实磁盘。
-- 不要求用真实 Go 工程目录去承载这些 fixture 文件。
+- 不要求用真实 Go 工程目录去承载这些 `rootfs/` 文件。
 - 不要求 `read_file` 或 `write_file` 真的访问操作系统文件系统。

@@ -105,12 +105,20 @@ components:
           type: string
         model:
           type: string
+        endpoint:
+          type: string
         success:
           type: boolean
         error:
           type: string
         total_score:
           type: integer
+        raw_score:
+          type: integer
+        max_score:
+          type: integer
+        normalized_score:
+          type: number
         metrics:
           $ref: "#/components/schemas/Metrics"
         deductions:
@@ -134,8 +142,12 @@ components:
         - profile
         - driver
         - model
+        - endpoint
         - success
         - total_score
+        - raw_score
+        - max_score
+        - normalized_score
         - metrics
     Metrics:
       type: object
@@ -152,16 +164,10 @@ components:
         pre_write_read_coverage:
           type: number
           nullable: true
-        vendor_trap_recovered:
-          type: boolean
-        util_trap_triggered:
-          type: boolean
       required:
         - read_file_calls
         - write_file_calls
         - list_dir_calls
-        - vendor_trap_recovered
-        - util_trap_triggered
     ScoreAdjustment:
       type: object
       properties:

@@ -14,45 +14,66 @@ Generate a config file plus the built-in benchmark case:
 llmsnare init
 ```
 
+If `--config` is omitted, `init` writes to:
+
+- `~/.config/llmsnare/config.yaml`
+- `~/.config/llmsnare/benchmarks/read_write_ratio_sample/case.yaml`
+- `~/.config/llmsnare/benchmarks/read_write_ratio_sample/rootfs/...`
+
 Or write into a custom location:
 
 ```bash
-llmsnare init --config /tmp/llmsnare/config.yaml
+llmsnare init --config ./config.yaml
 ```
 
 This creates:
 
 - `config.yaml`
-- `benchmarks/read_write_ratio_smoke_v1/case.yaml`
-- a matching fixture directory for that case
+- `benchmarks/read_write_ratio_sample/case.yaml`
+- `benchmarks/read_write_ratio_sample/rootfs/...`
+
+### List Cases
+
+List all cases under the default cases directory:
+
+```bash
+llmsnare cases
+```
 
 ### Run Once
 
 Run one profile:
 
 ```bash
-llmsnare run openai_gpt4o --config /tmp/llmsnare/config.yaml
+llmsnare run openai_gpt4o --config ./config.yaml
 ```
 
 Run all profiles:
 
 ```bash
-llmsnare run --config /tmp/llmsnare/config.yaml
+llmsnare run --config ./config.yaml
 ```
 
 Print JSON:
 
 ```bash
-llmsnare run openai_gpt4o --config /tmp/llmsnare/config.yaml --json
+llmsnare run openai_gpt4o --config ./config.yaml --json
 ```
 
-Override the case file and fixture directory without editing config:
+Run a case by case ID:
 
 ```bash
 llmsnare run openai_gpt4o \
-  --config /tmp/llmsnare/config.yaml \
-  --case /tmp/llmsnare/benchmarks/read_write_ratio_smoke_v1/case.yaml \
-  --fixture-dir /home/user/my-fixtures/read-write-ratio
+  --config ./config.yaml \
+  --case read_write_ratio_sample
+```
+
+Run a case by case directory path:
+
+```bash
+llmsnare run openai_gpt4o \
+  --config ./config.yaml \
+  --case ./benchmarks/read_write_ratio_sample
 ```
 
 ### Serve
@@ -60,10 +81,10 @@ llmsnare run openai_gpt4o \
 Run on a schedule and expose timelines over HTTP:
 
 ```bash
-llmsnare serve --config /tmp/llmsnare/config.yaml
+llmsnare serve --config ./config.yaml
 ```
 
-The same `--case` and `--fixture-dir` overrides are available in `serve` mode.
+`serve` accepts the same `--case` flag.
 
 ## Config
 
@@ -71,9 +92,6 @@ Example:
 
 ```yaml
 version: 1
-
-benchmark:
-  case_file: "benchmarks/read_write_ratio_smoke_v1/case.yaml"
 
 serve:
   interval: 6h
@@ -88,45 +106,38 @@ profiles:
     model: "gpt-4o"
     endpoint: "https://api.openai.com/v1"
     api_key: "${OPENAI_API_KEY}"
-    timeout: 90s
+    timeout: 300s
     temperature: 0
     max_output_tokens: 4096
 ```
 
 Notes:
 
-- `benchmark.case_file` points to a `case.yaml`
-- relative paths are resolved relative to the config file directory
+- benchmark cases live under `benchmarks/` relative to the config file directory
+- `--case` accepts either a case ID or a case directory path
+- `run` and `serve` require `--case`
+- if `benchmarks/` is empty, run `llmsnare init`
+- if cases already exist, run `llmsnare cases` and then pass `--case`
 - `api_key` supports `${ENV_NAME}` expansion
 - `endpoint` is required for every profile
 - Anthropic endpoint overrides are currently rejected because the configured `uniai` provider does not expose a custom base URL
 
 ## Case Files
 
-Each benchmark case is defined by a `case.yaml` plus a fixture directory.
+Each benchmark case is a directory with a fixed shape:
 
 Example layout:
 
 ```text
 benchmarks/
-  read_write_ratio_smoke_v1/
+  read_write_ratio_sample/
     case.yaml
-    fixture/
+    rootfs/
       main.go
       docs/format.txt
 ```
 
-`case.yaml` points to the fixture tree with:
-
-```yaml
-fixture_dir: fixture
-```
-
-`fixture_dir` may be:
-
-- relative to the case file directory
-- an absolute path
-- a `~`-prefixed home path
+`rootfs/` is loaded into memory and exposed to the model through mock tools. It is not edited as a real working tree.
 
 See [case_format.md](./docs/case_format.md) for the full case schema.
 
@@ -136,7 +147,11 @@ See [check_reference.md](./docs/check_reference.md) for supported `check.type` v
 
 Built-in cases live in the source tree and are embedded into the binary:
 
-- [read_write_ratio_smoke_v1](./internal/benchcase/testdata/builtin/benchmarks/read_write_ratio_smoke_v1/case.yaml)
+- [read_write_ratio_sample](./internal/benchcase/testdata/builtin/benchmarks/read_write_ratio_sample/case.yaml)
+
+Case notes:
+
+- [read_write_ratio_sample README](./internal/benchcase/testdata/builtin/benchmarks/read_write_ratio_sample/README.md)
 
 `llmsnare init` copies this embedded case to disk so you can edit it freely.
 

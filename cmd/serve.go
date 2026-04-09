@@ -19,8 +19,7 @@ import (
 )
 
 func newServeCommand() *cobra.Command {
-	var casePath string
-	var fixtureDir string
+	var caseRef string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -31,7 +30,7 @@ func newServeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			caseDef, err := loadCase(cfg, casePath, fixtureDir)
+			caseDef, err := loadCase(caseRef)
 			if err != nil {
 				return err
 			}
@@ -61,8 +60,7 @@ func newServeCommand() *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().StringVar(&casePath, "case", "", "Override the benchmark case file path")
-	cmd.Flags().StringVar(&fixtureDir, "fixture-dir", "", "Override the benchmark fixture directory")
+	cmd.Flags().StringVar(&caseRef, "case", "", "Case ID or case directory path")
 	return cmd
 }
 

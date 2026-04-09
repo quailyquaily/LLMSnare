@@ -1,0 +1,5 @@
+Status output format:
+items: red, blue
+
+Use the literal prefix `items: `.
+Join items with `, `.

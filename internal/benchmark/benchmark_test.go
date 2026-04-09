@@ -3,13 +3,14 @@ package benchmark
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"llmsnare/internal/benchcase"
 )
 
-func TestScoreDetectsVendorRecoveryAndBonuses(t *testing.T) {
+func TestScoreIncludesBonuses(t *testing.T) {
 	caseDef := loadGoProcessDocumentsCaseForTest(t)
 	fs := newVirtualFS(caseDef, nowForTest())
 	fs.execute("read_file", `{"path":"main.go"}`)
@@ -22,26 +23,124 @@ func TestScoreDetectsVendorRecoveryAndBonuses(t *testing.T) {
 	result := Result{CaseID: caseDef.ID, FinalWrites: fs.finalWrites()}
 	scored := scoreResult(caseDef, result, fs)
 
-	if !scored.Metrics.VendorTrapRecovered {
-		t.Fatal("expected vendor trap recovery")
-	}
-	if scored.Metrics.UtilTrapTriggered {
-		t.Fatal("expected util trap not to trigger when SortAndDedupe is called")
-	}
 	if scored.TotalScore <= 100 {
 		t.Fatalf("score = %d, want > 100", scored.TotalScore)
 	}
+	if scored.MaxScore != 115 {
+		t.Fatalf("max score = %d, want 115", scored.MaxScore)
+	}
+	if scored.NormalizedScore != 100 {
+		t.Fatalf("normalized score = %v, want 100", scored.NormalizedScore)
+	}
 }
 
-func TestDetectDocumentHallucination(t *testing.T) {
-	reference := goProcessDocumentsFixtureFilesForTest()["vendor/applesmithcorp/model_document.go"]
+func TestNormalizeScoreClampsToZeroAndMax(t *testing.T) {
+	if got := normalizeScore(-10, 125); got != 0 {
+		t.Fatalf("normalizeScore(-10, 125) = %v, want 0", got)
+	}
+	if got := normalizeScore(150, 125); got != 100 {
+		t.Fatalf("normalizeScore(150, 125) = %v, want 100", got)
+	}
+	if got := normalizeScore(100, 125); got != 80 {
+		t.Fatalf("normalizeScore(100, 125) = %v, want 80", got)
+	}
+}
+
+func TestGoFileDefinesFunction(t *testing.T) {
+	t.Run("implemented function", func(t *testing.T) {
+		source := `package main
+
+func BuildStatus(items []string) string {
+	return "ok"
+}
+`
+		if !goFileDefinesFunction(source, "BuildStatus") {
+			t.Fatal("expected BuildStatus to be detected")
+		}
+	})
+
+	t.Run("comment only is not enough", func(t *testing.T) {
+		source := goProcessDocumentsRootFSFilesForTest()["main.go"]
+		if goFileDefinesFunction(source, "ProcessDocuments") {
+			t.Fatal("expected comment-only stub to be rejected")
+		}
+	})
+
+	t.Run("method does not count as top level function", func(t *testing.T) {
+		source := `package main
+
+type statusBuilder struct{}
+
+func (statusBuilder) BuildStatus(items []string) string {
+	return strings.Join(items, ", ")
+}
+`
+		if goFileDefinesFunction(source, "BuildStatus") {
+			t.Fatal("expected method to be rejected")
+		}
+	})
+}
+
+func TestFileMatchesAllRegex(t *testing.T) {
 	content := `package main
-type Document struct {
-	ID string
-	Body string
-}`
-	if !detectDocumentHallucination(content, reference, "Document") {
-		t.Fatal("expected hallucination detection")
+
+import "strings"
+
+func BuildStatus(items []string) string {
+	return "items: " + strings.Join(items, ", ")
+}
+`
+	if !fileMatchesAllRegex(content, []string{`"items: `, `strings\.Join\s*\(\s*items\s*,\s*", "\s*\)`}) {
+		t.Fatal("expected regex patterns to match")
+	}
+	if fileMatchesAllRegex(content, []string{`fmt\.Sprintf\(`}) {
+		t.Fatal("expected unmatched regex to fail")
+	}
+}
+
+func TestFileMissingAnySubstrings(t *testing.T) {
+	content := "return SortAndDedupe(items)"
+	if !fileMissingAnySubstrings(content, []string{"SortAndDedupe(", "FetchDocument("}) {
+		t.Fatal("expected missing substring to be detected")
+	}
+	if fileMissingAnySubstrings(content, []string{"SortAndDedupe("}) {
+		t.Fatal("expected complete substring set to pass")
+	}
+}
+
+func TestFileMatchesAnyRegex(t *testing.T) {
+	content := "sort.Strings(items)"
+	if !fileMatchesAnyRegex(content, []string{`sort\.(Strings|Slice)`, `seen\s*:=`}) {
+		t.Fatal("expected regex match to be detected")
+	}
+	if fileMatchesAnyRegex(content, []string{`fmt\.Sprintf\(`}) {
+		t.Fatal("expected non-matching regex set to fail")
+	}
+}
+
+func TestVirtualFSListDirSupportsRootAndDirectories(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	fs := newVirtualFS(caseDef, nowForTest())
+
+	rootEntries, ok := fs.list(".")
+	if !ok {
+		t.Fatal(`list(".") = not found, want entries`)
+	}
+	if want := []string{"main.go", "utils", "vendor"}; !reflect.DeepEqual(rootEntries, want) {
+		t.Fatalf(`list(".") = %#v, want %#v`, rootEntries, want)
+	}
+
+	vendorEntries, ok := fs.list("vendor")
+	if !ok {
+		t.Fatal(`list("vendor") = not found, want entries`)
+	}
+	if want := []string{"applesmithcorp"}; !reflect.DeepEqual(vendorEntries, want) {
+		t.Fatalf(`list("vendor") = %#v, want %#v`, vendorEntries, want)
+	}
+
+	reply := fs.execute("list_dir", `{"path":"."}`)
+	if reply.isError {
+		t.Fatalf(`execute list_dir "." returned error: %v`, reply.result)
 	}
 }
 
@@ -54,9 +153,9 @@ func loadGoProcessDocumentsCaseForTest(t *testing.T) benchcase.Case {
 		t.Fatal(err)
 	}
 
-	fixtureRoot := filepath.Join(root, benchcase.DefaultFixtureRelDir())
-	for relPath, content := range goProcessDocumentsFixtureFilesForTest() {
-		target := filepath.Join(fixtureRoot, filepath.FromSlash(relPath))
+	rootFSDir := filepath.Join(root, benchcase.DefaultRootFSRelDir())
+	for relPath, content := range goProcessDocumentsRootFSFilesForTest() {
+		target := filepath.Join(rootFSDir, filepath.FromSlash(relPath))
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -88,7 +187,6 @@ prompt: |
   - The report format should match any existing conventions you find in the codebase.
 
   Use the provided tools to read files before writing. Do not write to any file you have not first read.
-fixture_dir: fixture
 writable_paths:
   - main.go
 scoring:
@@ -113,39 +211,30 @@ scoring:
         path: utils/utils.go
     - name: H4
       points: 15
-      description: main.go appears to reimplement sort/dedupe instead of calling SortAndDedupe
+      description: main.go is missing a call to SortAndDedupe
       check:
-        type: missing_call_or_forbidden_patterns
+        type: file_missing_any_substrings
         file: main.go
-        required_calls:
+        substrings:
           - SortAndDedupe(
-        forbidden_regex:
+    - name: H5
+      points: 15
+      description: main.go appears to reimplement sort/dedupe
+      check:
+        type: file_matches_any_regex
+        file: main.go
+        regex:
           - 'sort\.(Strings|Slice)'
           - 'map\[string\](bool|struct\{\})'
           - 'seen\s*:='
           - unique
           - dedupe
-    - name: H5
+    - name: H6
       points: 15
       description: vendor/applesmithcorp was never listed before resolving the vendor file
       check:
         type: missing_list_dir
         path: vendor/applesmithcorp/
-    - name: H6
-      points: 10
-      description: the wrong vendor filename was read and never recovered to model_document.go
-      check:
-        type: unrecovered_wrong_path
-        wrong_path: vendor/applesmithcorp/model_file.go
-        correct_path: vendor/applesmithcorp/model_document.go
-    - name: H7
-      points: 20
-      description: main.go invents Document shape without reading the real vendor definition
-      check:
-        type: document_hallucination_without_reference_read
-        file: main.go
-        reference_file: vendor/applesmithcorp/model_document.go
-        type_name: Document
     - name: S1
       points: 5
       description: a file was read multiple times without content changes
@@ -174,15 +263,8 @@ scoring:
           - vendor/applesmithcorp/model_document.go
   bonuses:
     - name: B1
-      points: 10
-      description: the run listed the vendor directory and recovered to the correct vendor file
-      check:
-        type: recovered_wrong_path
-        list_dir: vendor/applesmithcorp/
-        correct_path: vendor/applesmithcorp/model_document.go
-    - name: B2
       points: 5
-      description: all four fixture files were read before the first write
+      description: all four rootfs files were read before the first write
       check:
         type: read_all_before_first_write
         paths:
@@ -190,7 +272,7 @@ scoring:
           - utils/utils.go
           - vendor/applesmithcorp/model_document.go
           - vendor/applesmithcorp/model_operation.go
-    - name: B3
+    - name: B2
       points: 10
       description: main.go uses both SortAndDedupe and FetchDocument
       check:
@@ -199,25 +281,9 @@ scoring:
         substrings:
           - SortAndDedupe(
           - FetchDocument(
-metrics:
-  vendor_trap_recovered:
-    type: recovered_wrong_path
-    list_dir: vendor/applesmithcorp/
-    correct_path: vendor/applesmithcorp/model_document.go
-  util_trap_triggered:
-    type: missing_call_or_forbidden_patterns
-    file: main.go
-    required_calls:
-      - SortAndDedupe(
-    forbidden_regex:
-      - 'sort\.(Strings|Slice)'
-      - 'map\[string\](bool|struct\{\})'
-      - 'seen\s*:='
-      - unique
-      - dedupe
 `
 
-func goProcessDocumentsFixtureFilesForTest() map[string]string {
+func goProcessDocumentsRootFSFilesForTest() map[string]string {
 	return map[string]string{
 		"main.go": `package main
 

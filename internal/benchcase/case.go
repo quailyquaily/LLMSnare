@@ -2,42 +2,49 @@ package benchcase
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	DefaultCaseRelPath   = "benchmarks/read_write_ratio_smoke_v1/case.yaml"
-	defaultFixtureRelDir = "fixture"
+	BuiltinCaseID       = "read_write_ratio_sample"
+	DefaultCasesRelDir  = "benchmarks"
+	BuiltinCaseRelPath  = DefaultCasesRelDir + "/" + BuiltinCaseID + "/case.yaml"
+	defaultRootFSRelDir = "rootfs"
 )
 
 type Case struct {
 	Version       int               `yaml:"version"`
 	ID            string            `yaml:"id"`
 	Prompt        string            `yaml:"prompt"`
-	FixtureDir    string            `yaml:"fixture_dir"`
 	WritablePaths []string          `yaml:"writable_paths"`
 	Scoring       Scoring           `yaml:"scoring"`
-	Metrics       Metrics           `yaml:"metrics"`
-	FixtureFiles  map[string]string `yaml:"-"`
+	Dir           string            `yaml:"-"`
+	RootFSFiles   map[string]string `yaml:"-"`
+}
+
+type Summary struct {
+	ID            string
+	Dir           string
+	PromptSummary string
+	WritablePaths int
+	RootFSFiles   int
+}
+
+type ListWarning struct {
+	Dir     string
+	Message string
 }
 
 type Scoring struct {
 	Deductions []Rule `yaml:"deductions"`
 	Bonuses    []Rule `yaml:"bonuses"`
-}
-
-type Metrics struct {
-	VendorTrapRecovered *Check `yaml:"vendor_trap_recovered"`
-	UtilTrapTriggered   *Check `yaml:"util_trap_triggered"`
 }
 
 type Rule struct {
@@ -49,31 +56,19 @@ type Rule struct {
 }
 
 type Check struct {
-	Type           string   `yaml:"type"`
-	Path           string   `yaml:"path"`
-	Paths          []string `yaml:"paths"`
-	File           string   `yaml:"file"`
-	WrongPath      string   `yaml:"wrong_path"`
-	CorrectPath    string   `yaml:"correct_path"`
-	ListDir        string   `yaml:"list_dir"`
-	Threshold      float64  `yaml:"threshold"`
-	Substrings     []string `yaml:"substrings"`
-	RequiredCalls  []string `yaml:"required_calls"`
-	ForbiddenRegex []string `yaml:"forbidden_regex"`
-	ReferenceFile  string   `yaml:"reference_file"`
-	TypeName       string   `yaml:"type_name"`
+	Type         string   `yaml:"type"`
+	Path         string   `yaml:"path"`
+	Paths        []string `yaml:"paths"`
+	File         string   `yaml:"file"`
+	FunctionName string   `yaml:"function_name"`
+	Regex        []string `yaml:"regex"`
+	Threshold    float64  `yaml:"threshold"`
+	Substrings   []string `yaml:"substrings"`
 }
 
-func Load(casePath string) (Case, error) {
-	return load(casePath, "")
-}
-
-func LoadWithFixtureDir(casePath, fixtureDir string) (Case, error) {
-	return load(casePath, fixtureDir)
-}
-
-func load(casePath, fixtureDirOverride string) (Case, error) {
-	data, err := os.ReadFile(casePath)
+func LoadDir(caseDir string) (Case, error) {
+	caseDir = filepath.Clean(caseDir)
+	data, err := os.ReadFile(filepath.Join(caseDir, "case.yaml"))
 	if err != nil {
 		return Case{}, fmt.Errorf("read benchmark case: %w", err)
 	}
@@ -82,18 +77,86 @@ func load(casePath, fixtureDirOverride string) (Case, error) {
 	if err := yaml.Unmarshal(data, &out); err != nil {
 		return Case{}, fmt.Errorf("parse benchmark case: %w", err)
 	}
-
-	baseDir := filepath.Dir(casePath)
-	if strings.TrimSpace(fixtureDirOverride) != "" {
-		out.FixtureDir = fixtureDirOverride
-	}
-	if err := out.normalize(baseDir); err != nil {
+	out.Dir = caseDir
+	if err := out.normalize(); err != nil {
 		return Case{}, err
 	}
 	return out, nil
 }
 
-func (c *Case) normalize(baseDir string) error {
+func Load(casePath string) (Case, error) {
+	if filepath.Base(casePath) != "case.yaml" {
+		return LoadDir(casePath)
+	}
+	return LoadDir(filepath.Dir(casePath))
+}
+
+func List(root string) ([]Summary, []ListWarning, error) {
+	root = filepath.Clean(root)
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return nil, nil, nil
+	} else if err != nil {
+		return nil, nil, fmt.Errorf("stat benchmark cases root: %w", err)
+	}
+
+	items := make([]Summary, 0)
+	warnings := make([]ListWarning, 0)
+	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if filepath.Clean(current) == root {
+				return err
+			}
+			warnings = append(warnings, ListWarning{
+				Dir:     current,
+				Message: err.Error(),
+			})
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() || entry.Name() != "case.yaml" {
+			return nil
+		}
+
+		caseDir := filepath.Dir(current)
+		caseDef, loadErr := LoadDir(caseDir)
+		if loadErr != nil {
+			warnings = append(warnings, ListWarning{
+				Dir:     caseDir,
+				Message: loadErr.Error(),
+			})
+			return nil
+		}
+		items = append(items, Summary{
+			ID:            caseDef.ID,
+			Dir:           caseDir,
+			PromptSummary: summarizePrompt(caseDef.Prompt),
+			WritablePaths: len(caseDef.WritablePaths),
+			RootFSFiles:   len(caseDef.RootFSFiles),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("list benchmark cases: %w", err)
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ID == items[j].ID {
+			return items[i].Dir < items[j].Dir
+		}
+		return items[i].ID < items[j].ID
+	})
+	sort.Slice(warnings, func(i, j int) bool {
+		if warnings[i].Dir == warnings[j].Dir {
+			return warnings[i].Message < warnings[j].Message
+		}
+		return warnings[i].Dir < warnings[j].Dir
+	})
+	return items, warnings, nil
+}
+
+func (c *Case) normalize() error {
 	if c.Version != 1 {
 		return fmt.Errorf("benchmark case version must be 1")
 	}
@@ -103,28 +166,22 @@ func (c *Case) normalize(baseDir string) error {
 	if strings.TrimSpace(c.Prompt) == "" {
 		return fmt.Errorf("benchmark case prompt is required")
 	}
-	if strings.TrimSpace(c.FixtureDir) == "" {
-		return fmt.Errorf("benchmark case fixture_dir is required")
+	if strings.TrimSpace(c.Dir) == "" {
+		return fmt.Errorf("benchmark case directory is required")
 	}
 
-	c.FixtureDir = resolvePath(baseDir, c.FixtureDir)
-	files, err := loadFixtureFiles(c.FixtureDir)
+	rootFSDir := filepath.Join(c.Dir, defaultRootFSRelDir)
+	files, err := loadRootFSFiles(rootFSDir)
 	if err != nil {
 		return err
 	}
-	c.FixtureFiles = files
+	c.RootFSFiles = files
 	c.WritablePaths = normalizePaths(c.WritablePaths)
 	if err := normalizeRules(c.Scoring.Deductions); err != nil {
 		return err
 	}
 	if err := normalizeRules(c.Scoring.Bonuses); err != nil {
 		return err
-	}
-	if c.Metrics.VendorTrapRecovered != nil {
-		c.Metrics.VendorTrapRecovered.normalize()
-	}
-	if c.Metrics.UtilTrapTriggered != nil {
-		c.Metrics.UtilTrapTriggered.normalize()
 	}
 	return nil
 }
@@ -142,22 +199,20 @@ func normalizeRules(rules []Rule) error {
 func (c *Check) normalize() {
 	c.Path = normalizeRelPath(c.Path)
 	c.File = normalizeRelPath(c.File)
-	c.WrongPath = normalizeRelPath(c.WrongPath)
-	c.CorrectPath = normalizeRelPath(c.CorrectPath)
-	c.ListDir = normalizeDir(c.ListDir)
-	c.ReferenceFile = normalizeRelPath(c.ReferenceFile)
 	c.Paths = normalizePaths(c.Paths)
 }
 
 func normalizePaths(paths []string) []string {
 	out := make([]string, 0, len(paths))
 	for _, item := range paths {
-		out = append(out, normalizeRelPath(item))
+		if cleaned := normalizeRelPath(item); cleaned != "" {
+			out = append(out, cleaned)
+		}
 	}
 	return out
 }
 
-func loadFixtureFiles(root string) (map[string]string, error) {
+func loadRootFSFiles(root string) (map[string]string, error) {
 	files := map[string]string{}
 	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -179,15 +234,15 @@ func loadFixtureFiles(root string) (map[string]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("load fixture files: %w", err)
+		return nil, fmt.Errorf("load case rootfs: %w", err)
 	}
 	if len(files) == 0 {
-		return nil, fmt.Errorf("fixture_dir %q did not contain any files", root)
+		return nil, fmt.Errorf("case rootfs %q did not contain any files", root)
 	}
 	return files, nil
 }
 
-func loadFixtureFilesFromFS(fsys fs.FS, root string) (map[string]string, error) {
+func loadRootFSFilesFromFS(fsys fs.FS, root string) (map[string]string, error) {
 	files := map[string]string{}
 	err := fs.WalkDir(fsys, root, func(current string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -206,29 +261,12 @@ func loadFixtureFilesFromFS(fsys fs.FS, root string) (map[string]string, error) 
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("load fixture files: %w", err)
+		return nil, fmt.Errorf("load case rootfs: %w", err)
 	}
 	if len(files) == 0 {
-		return nil, fmt.Errorf("fixture_dir %q did not contain any files", root)
+		return nil, fmt.Errorf("case rootfs %q did not contain any files", root)
 	}
 	return files, nil
-}
-
-func resolvePath(baseDir, raw string) string {
-	if strings.HasPrefix(raw, "~") {
-		if home, err := os.UserHomeDir(); err == nil {
-			if raw == "~" {
-				return home
-			}
-			if strings.HasPrefix(raw, "~/") {
-				return filepath.Join(home, raw[2:])
-			}
-		}
-	}
-	if filepath.IsAbs(raw) {
-		return raw
-	}
-	return filepath.Join(baseDir, raw)
 }
 
 func normalizeRelPath(raw string) string {
@@ -242,53 +280,20 @@ func normalizeRelPath(raw string) string {
 	return cleaned
 }
 
-func normalizeDir(raw string) string {
-	cleaned := normalizeRelPath(raw)
-	if cleaned == "" {
-		return ""
-	}
-	if !strings.HasSuffix(cleaned, "/") {
-		cleaned += "/"
-	}
-	return cleaned
+func DefaultRootFSRelDir() string {
+	return defaultRootFSRelDir
 }
 
-func DefaultFixtureRelDir() string {
-	return defaultFixtureRelDir
-}
-
-func ExtractStructFields(source, typeName string) (map[string]struct{}, error) {
-	file, err := parser.ParseFile(token.NewFileSet(), typeName+".go", source, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	fields := map[string]struct{}{}
-	found := false
-	for _, decl := range file.Decls {
-		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok {
+func summarizePrompt(prompt string) string {
+	for _, line := range strings.Split(prompt, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
 		}
-		for _, spec := range genDecl.Specs {
-			typeSpec, ok := spec.(*ast.TypeSpec)
-			if !ok || typeSpec.Name.Name != typeName {
-				continue
-			}
-			structType, ok := typeSpec.Type.(*ast.StructType)
-			if !ok {
-				return nil, fmt.Errorf("%s is not a struct", typeName)
-			}
-			found = true
-			for _, field := range structType.Fields.List {
-				for _, name := range field.Names {
-					fields[name.Name] = struct{}{}
-				}
-			}
+		if len(line) > 72 {
+			return line[:69] + "..."
 		}
+		return line
 	}
-	if !found {
-		return nil, fmt.Errorf("struct %s not found", typeName)
-	}
-	return fields, nil
+	return ""
 }

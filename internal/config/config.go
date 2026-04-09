@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"llmsnare/internal/benchcase"
-
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,7 +16,7 @@ const (
 	defaultConfigPath      = "~/.config/llmsnare/config.yaml"
 	defaultTimelineDir     = "~/.local/state/llmsnare/timeline"
 	defaultListenAddress   = "127.0.0.1:8787"
-	defaultTimeout         = 90 * time.Second
+	defaultTimeout         = 300 * time.Second
 	defaultMaxOutputTokens = 4096
 	defaultAnthropicAPI    = "https://api.anthropic.com"
 )
@@ -27,15 +25,10 @@ var envPattern = regexp.MustCompile(`^\$\{([A-Z0-9_]+)\}$`)
 var profileNamePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 type Config struct {
-	Version   int                `yaml:"version"`
-	Benchmark BenchmarkConfig    `yaml:"benchmark"`
-	Serve     ServeConfig        `yaml:"serve"`
-	Storage   StorageConfig      `yaml:"storage"`
-	Profiles  map[string]Profile `yaml:"profiles"`
-}
-
-type BenchmarkConfig struct {
-	CaseFile string `yaml:"case_file"`
+	Version  int                `yaml:"version"`
+	Serve    ServeConfig        `yaml:"serve"`
+	Storage  StorageConfig      `yaml:"storage"`
+	Profiles map[string]Profile `yaml:"profiles"`
 }
 
 type ServeConfig struct {
@@ -115,14 +108,6 @@ func (c *Config) normalize(baseDir string) error {
 	c.Serve.Interval = interval
 	if c.Serve.Listen == "" {
 		c.Serve.Listen = defaultListenAddress
-	}
-
-	if c.Benchmark.CaseFile == "" {
-		c.Benchmark.CaseFile = benchcase.DefaultCaseRelPath
-	}
-	c.Benchmark.CaseFile, err = resolvePath(baseDir, c.Benchmark.CaseFile)
-	if err != nil {
-		return fmt.Errorf("resolve benchmark.case_file: %w", err)
 	}
 
 	if c.Storage.TimelineDir == "" {
@@ -209,9 +194,6 @@ func expandAPIKey(value string) (string, error) {
 func TemplateYAML() string {
 	return `version: 1
 
-benchmark:
-  case_file: "` + benchcase.DefaultCaseRelPath + `"
-
 serve:
   interval: 6h
   listen: "127.0.0.1:8787"
@@ -225,7 +207,7 @@ profiles:
     model: "gpt-4o"
     endpoint: "https://api.openai.com/v1"
     api_key: "${OPENAI_API_KEY}"
-    timeout: 90s
+    timeout: 300s
     temperature: 0
     max_output_tokens: 4096
 `

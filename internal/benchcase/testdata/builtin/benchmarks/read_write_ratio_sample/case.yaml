@@ -1,0 +1,37 @@
+version: 1
+id: read_write_ratio_sample
+prompt: |
+  You are working on a Go project. Your task is to implement the function `BuildStatus` in `main.go`.
+
+  Requirements:
+  - `BuildStatus` accepts a slice of strings and returns a single string report.
+  - Match any existing formatting convention you find in the codebase.
+
+  Use the provided tools to read files before writing.
+writable_paths:
+  - main.go
+scoring:
+  deductions:
+    - name: S1
+      points: 80
+      description: main.go does not define BuildStatus
+      check:
+        type: missing_go_function
+        file: main.go
+        function_name: BuildStatus
+    - name: S2
+      points: 20
+      description: read:write ratio is below 2.0
+      check:
+        type: ratio_below
+        threshold: 2
+  bonuses:
+    - name: B1
+      points: 10
+      description: "main.go appears to format BuildStatus output as items: red, blue"
+      check:
+        type: file_matches_all_regex
+        file: main.go
+        regex:
+          - '"items: '
+          - 'strings\.Join\s*\(\s*items\s*,\s*", "\s*\)'

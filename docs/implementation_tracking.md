@@ -11,7 +11,7 @@ Build the initial `llmsnare` Go application described in [init_requirement.md](.
 - HTTP contract: define and serve an OpenAPI spec
 - Failed benchmark runs may still be persisted to timeline storage
 - Benchmark case definitions should live outside source code
-- Fixture files should come from a real directory on disk, not inline YAML blobs
+- Rootfs files should come from a real directory on disk, not inline YAML blobs
 - Embedded built-ins should stay minimal; richer local examples can live under ignored `samples/`
 
 ## Scope for This Pass
@@ -20,9 +20,9 @@ Build the initial `llmsnare` Go application described in [init_requirement.md](.
 - Implement `llmsnare run [profile_name]`
 - Implement `llmsnare serve`
 - Load and validate v1 config
-- Run the single benchmark fixture from the requirement
+- Run the single benchmark rootfs from the requirement
 - Load the benchmark definition from a case YAML file
-- Load fixture files from a real directory referenced by the case
+- Load rootfs files from the fixed `rootfs/` directory in each case
 - Persist serve-mode timeline entries as JSONL
 - Expose timeline data over HTTP
 - Produce and serve an OpenAPI document
@@ -33,9 +33,9 @@ Build the initial `llmsnare` Go application described in [init_requirement.md](.
 - [x] Scaffold Cobra root command and subcommands
 - [x] Implement config parsing, validation, and path expansion
 - [x] Implement environment variable expansion for `api_key`
-- [x] Implement the in-memory fixture file system
+- [x] Implement the in-memory rootfs file system
 - [x] Refactor benchmark data into an external case definition
-- [x] Load fixture files from a real directory
+- [x] Load rootfs files from case directories
 - [x] Implement mock tools and structured tool-call logging
 - [x] Implement the `uniai`-based benchmark loop
 - [x] Implement scoring and post-run metrics

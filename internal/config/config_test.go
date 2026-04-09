@@ -40,9 +40,6 @@ profiles:
 	if cfg.Storage.TimelineDir == "" {
 		t.Fatal("timeline dir should be defaulted")
 	}
-	if cfg.Benchmark.CaseFile == "" {
-		t.Fatal("case file should be defaulted")
-	}
 }
 
 func TestLoadRejectsAnthropicEndpointOverride(t *testing.T) {
@@ -67,5 +64,35 @@ profiles:
 
 	if _, err := Load(path); err == nil {
 		t.Fatal("Load succeeded, want error")
+	}
+}
+
+func TestLoadIgnoresUnknownBenchmarkField(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	content := `version: 1
+benchmark:
+  case_file: "benchmarks/demo/case.yaml"
+serve:
+  interval: 6h
+storage: {}
+profiles:
+  demo:
+    driver: openai
+    model: gpt-4o
+    endpoint: https://api.openai.com/v1
+    api_key: plain-text-key
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if _, ok := cfg.Profiles["demo"]; !ok {
+		t.Fatal("expected demo profile to load")
 	}
 }

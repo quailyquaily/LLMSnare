@@ -3,7 +3,7 @@
 Each benchmark case is defined by:
 
 - one `case.yaml`
-- one fixture directory referenced by `fixture_dir`
+- one `rootfs/` directory next to it
 
 ## Minimal Shape
 
@@ -12,13 +12,11 @@ version: 1
 id: example_case
 prompt: |
   Your benchmark prompt goes here.
-fixture_dir: fixture
 writable_paths:
   - main.go
 scoring:
   deductions: []
   bonuses: []
-metrics: {}
 ```
 
 ## Top-Level Fields
@@ -28,20 +26,23 @@ metrics: {}
 | `version` | integer | 是 | 当前固定为 `1`。 |
 | `id` | string | 是 | case 标识，会出现在运行结果里。 |
 | `prompt` | string | 是 | 发给模型的完整任务提示词。 |
-| `fixture_dir` | string | 是 | fixture 根目录。 |
 | `writable_paths` | array[string] | 否 | 预留字段；当前主要用于表达可写目标。 |
 | `scoring` | object | 是 | 扣分和加分规则。 |
-| `metrics` | object | 否 | 布尔类附加指标定义。 |
 
-## Path Resolution
+## Directory Layout
 
-`fixture_dir` 支持三种写法：
+目录结构固定如下：
 
-- 相对路径：相对 `case.yaml` 所在目录解析
-- 绝对路径：如 `/home/user/my-fixture`
-- `~` 开头：如 `~/fixtures/my-case`
+```text
+example_case/
+  case.yaml
+  rootfs/
+    main.go
+    docs/
+      format.txt
+```
 
-fixture 文件会被加载进内存，运行时使用 mock 工具访问，不会直接把这些文件当成真实仓库来改。
+`rootfs/` 会被完整加载进内存。运行时的 `list_dir`、`read_file`、`write_file` 都只操作这份内存里的 mock 文件系统，不会直接改真实目录。
 
 ## Scoring
 
@@ -59,11 +60,13 @@ scoring:
   bonuses:
     - name: B1
       points: 10
-      description: recovered vendor trap
+      description: main.go appears to format BuildStatus output as items: red, blue
       check:
-        type: recovered_wrong_path
-        list_dir: vendor/applesmithcorp/
-        correct_path: vendor/applesmithcorp/model_document.go
+        type: file_matches_all_regex
+        file: main.go
+        regex:
+          - '"items: '
+          - 'strings\.Join\s*\(\s*items\s*,\s*", "\s*\)'
 ```
 
 ### Rule Fields
@@ -76,28 +79,9 @@ scoring:
 | `per_occurrence` | boolean | 否 | 若为 `true`，每次命中都单独记一条 adjustment。 |
 | `check` | object | 是 | 判定条件。 |
 
-## Metrics
+## Automatic Metrics
 
-`metrics` 用来定义额外布尔指标。
-
-当前支持的字段：
-
-```yaml
-metrics:
-  vendor_trap_recovered:
-    type: recovered_wrong_path
-    list_dir: vendor/applesmithcorp/
-    correct_path: vendor/applesmithcorp/model_document.go
-  util_trap_triggered:
-    type: missing_call_or_forbidden_patterns
-    file: main.go
-    required_calls:
-      - SortAndDedupe(
-    forbidden_regex:
-      - 'sort\.(Strings|Slice)'
-```
-
-运行结果里还会自动计算：
+运行结果里会自动计算一组通用指标，不需要写进 `case.yaml`：
 
 - `read_file_calls`
 - `write_file_calls`
@@ -118,7 +102,6 @@ prompt: |
   - Match any existing formatting convention you find in the codebase.
 
   Use the provided tools to read files before writing. Do not write to any file you have not first read.
-fixture_dir: fixture
 writable_paths:
   - main.go
 scoring:
@@ -129,8 +112,16 @@ scoring:
       check:
         type: ratio_below
         threshold: 2
-  bonuses: []
-metrics: {}
+  bonuses:
+    - name: B1
+      points: 10
+      description: main.go appears to format BuildStatus output as items: red, blue
+      check:
+        type: file_matches_all_regex
+        file: main.go
+        regex:
+          - '"items: '
+          - 'strings\.Join\s*\(\s*items\s*,\s*", "\s*\)'
 ```
 
 ## References
