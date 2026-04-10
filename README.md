@@ -110,6 +110,10 @@ git push origin v0.1.0
 The workflow runs GoReleaser and publishes Linux `amd64` and `arm64`
 binaries plus `checksums.txt` to the GitHub Release.
 
+If the tag already exists and needs to be published again, run the
+`release` workflow manually from GitHub Actions and pass the tag name in
+the `tag` input.
+
 ## Config
 
 Example:
