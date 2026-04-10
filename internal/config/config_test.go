@@ -70,6 +70,60 @@ profiles:
 	}
 }
 
+func TestLoadOpenAIRespProfile(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "secret")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	content := `version: 1
+storage: {}
+profiles:
+  demo:
+    provider: openai_resp
+    model: gpt-5.4
+    api_key: ${OPENAI_API_KEY}
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	profile := cfg.Profiles["demo"]
+	if got := profile.APIKey; got != "secret" {
+		t.Fatalf("API key = %q, want secret", got)
+	}
+	if got := profile.Endpoint; got != defaultOpenAIAPI {
+		t.Fatalf("endpoint = %q, want %q", got, defaultOpenAIAPI)
+	}
+}
+
+func TestLoadRejectsOpenAIRespEndpointOverride(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "secret")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	content := `version: 1
+storage: {}
+profiles:
+  demo:
+    provider: openai_resp
+    model: gpt-5.4
+    endpoint: https://example.com/v1
+    api_key: ${OPENAI_API_KEY}
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("Load succeeded, want error")
+	}
+}
+
 func TestLoadIgnoresUnknownBenchmarkField(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

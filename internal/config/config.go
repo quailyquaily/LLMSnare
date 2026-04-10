@@ -137,9 +137,9 @@ func (c *Config) normalize(baseDir string) error {
 func (p *Profile) normalize() error {
 	p.Provider = strings.TrimSpace(p.Provider)
 	switch p.Provider {
-	case "openai", "anthropic", "gemini", "cloudflare":
+	case "openai", "openai_resp", "anthropic", "gemini", "cloudflare":
 	default:
-		return fmt.Errorf("provider must be one of openai, anthropic, gemini, cloudflare")
+		return fmt.Errorf("provider must be one of openai, openai_resp, anthropic, gemini, cloudflare")
 	}
 	if strings.TrimSpace(p.Model) == "" {
 		return fmt.Errorf("model is required")
@@ -150,6 +150,18 @@ func (p *Profile) normalize() error {
 	case "openai":
 		if p.Endpoint == "" {
 			p.Endpoint = defaultOpenAIAPI
+		}
+		resolvedKey, err := expandRequiredEnvRef("api_key", p.APIKey)
+		if err != nil {
+			return err
+		}
+		p.APIKey = resolvedKey
+	case "openai_resp":
+		if p.Endpoint == "" {
+			p.Endpoint = defaultOpenAIAPI
+		}
+		if strings.TrimRight(p.Endpoint, "/") != defaultOpenAIAPI {
+			return fmt.Errorf("openai_resp endpoint overrides are not supported; use the default OpenAI API base URL")
 		}
 		resolvedKey, err := expandRequiredEnvRef("api_key", p.APIKey)
 		if err != nil {

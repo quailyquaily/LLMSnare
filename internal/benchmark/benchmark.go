@@ -2,6 +2,8 @@ package benchmark
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -197,7 +199,7 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 			uniai.WithReplaceMessages(messages...),
 			uniai.WithTools(tools),
 			uniai.WithToolChoice(uniai.ToolChoiceAuto()),
-			uniai.WithToolsEmulationMode(uniai.ToolsEmulationFallback),
+			uniai.WithToolsEmulationMode(uniai.ToolsEmulationOff),
 			uniai.WithTemperature(profile.Temperature),
 			uniai.WithMaxTokens(profile.MaxOutputTokens),
 		)
@@ -220,15 +222,16 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 			ToolCalls: len(resp.ToolCalls),
 		})
 
+		toolCalls := normalizeToolCallsForProvider(profile.Provider, resp.ToolCalls)
 		messages = append(messages, uniai.Message{
 			Role:      uniai.RoleAssistant,
 			Content:   resp.Text,
-			ToolCalls: resp.ToolCalls,
+			ToolCalls: toolCalls,
 		})
 
-		for _, toolCall := range resp.ToolCalls {
+		for _, toolCall := range toolCalls {
 			reply := fs.execute(toolCall.Function.Name, toolCall.Function.Arguments)
-			messages = append(messages, uniai.ToolResult(toolCall.ID, reply.modelOutput))
+			messages = append(messages, uniai.ToolResult(toolCall.ID, formatToolResultForProvider(profile.Provider, toolCall.Function.Name, reply)))
 
 			if len(fs.logs) == 0 {
 				continue
@@ -287,7 +290,7 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 		return result, nil
 	}
 
-	result.Success = true
+	result.Success = isPassingScore(result.TotalScore)
 	r.report(ProgressEvent{
 		Kind:            ProgressRunFinished,
 		CaseID:          caseDef.ID,
@@ -296,9 +299,105 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 		RawScore:        result.RawScore,
 		MaxScore:        result.MaxScore,
 		NormalizedScore: result.NormalizedScore,
-		Success:         true,
+		Success:         result.Success,
 	})
 	return result, nil
+}
+
+func cloneToolCalls(toolCalls []uniai.ToolCall) []uniai.ToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	out := make([]uniai.ToolCall, len(toolCalls))
+	copy(out, toolCalls)
+	return out
+}
+
+func normalizeToolCallsForProvider(provider string, toolCalls []uniai.ToolCall) []uniai.ToolCall {
+	calls := cloneToolCalls(toolCalls)
+	if !strings.EqualFold(strings.TrimSpace(provider), "gemini") {
+		return calls
+	}
+	return ensureGeminiToolCallThoughtSignatures(calls)
+}
+
+func formatToolResultForProvider(provider, toolName string, reply toolResponse) string {
+	if !strings.EqualFold(strings.TrimSpace(provider), "gemini") {
+		return reply.modelOutput
+	}
+
+	payload := make(map[string]any, 1)
+	if reply.isError {
+		payload["error"] = fmt.Sprint(reply.result)
+	} else {
+		switch toolName {
+		case "list_dir":
+			payload["entries"] = reply.result
+		case "read_file":
+			payload["content"] = fmt.Sprint(reply.result)
+		case "write_file":
+			payload["status"] = fmt.Sprint(reply.result)
+		default:
+			payload["result"] = reply.result
+		}
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return `{"error":"failed to encode tool result"}`
+	}
+	return string(data)
+}
+
+func ensureGeminiToolCallThoughtSignatures(toolCalls []uniai.ToolCall) []uniai.ToolCall {
+	lastSignature := ""
+	for i := range toolCalls {
+		signature := strings.TrimSpace(toolCalls[i].ThoughtSignature)
+		if signature == "" {
+			_, decoded := splitGeminiToolCallIDAndThoughtSignature(toolCalls[i].ID)
+			signature = decoded
+		}
+		if signature == "" {
+			signature = lastSignature
+		}
+		if signature == "" {
+			signature = synthesizeGeminiThoughtSignature(toolCalls[i])
+		}
+		toolCalls[i].ThoughtSignature = signature
+		if signature != "" {
+			lastSignature = signature
+		}
+	}
+	return toolCalls
+}
+
+func splitGeminiToolCallIDAndThoughtSignature(callID string) (string, string) {
+	callID = strings.TrimSpace(callID)
+	if callID == "" {
+		return "", ""
+	}
+	idx := strings.LastIndex(callID, "|ts:")
+	if idx <= 0 || idx+4 >= len(callID) {
+		return callID, ""
+	}
+	encoded := callID[idx+4:]
+	decoded, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return callID, ""
+	}
+	baseID := callID[:idx]
+	if strings.TrimSpace(baseID) == "" {
+		return callID, ""
+	}
+	return baseID, string(decoded)
+}
+
+func synthesizeGeminiThoughtSignature(call uniai.ToolCall) string {
+	seed := strings.TrimSpace(call.ID) + "\n" +
+		strings.TrimSpace(call.Function.Name) + "\n" +
+		strings.TrimSpace(call.Function.Arguments)
+	sum := sha256.Sum256([]byte(seed))
+	return fmt.Sprintf("llmsnare_ts_%x", sum[:8])
 }
 
 func failureResult(caseID, profileName string, profile config.Profile, err error) Result {
@@ -333,6 +432,10 @@ func newClient(profile config.Profile) (ChatClient, error) {
 
 	switch profile.Provider {
 	case "openai":
+		cfg.OpenAIAPIKey = profile.APIKey
+		cfg.OpenAIAPIBase = profile.Endpoint
+		cfg.OpenAIModel = profile.Model
+	case "openai_resp":
 		cfg.OpenAIAPIKey = profile.APIKey
 		cfg.OpenAIAPIBase = profile.Endpoint
 		cfg.OpenAIModel = profile.Model
@@ -540,14 +643,14 @@ func normalizeScore(rawScore, maxScore int) float64 {
 	if maxScore <= 0 {
 		return 0
 	}
-	clamped := rawScore
-	if clamped < 0 {
-		clamped = 0
+	if rawScore > maxScore {
+		rawScore = maxScore
 	}
-	if clamped > maxScore {
-		clamped = maxScore
-	}
-	return (float64(clamped) / float64(maxScore)) * 100
+	return (float64(rawScore) / float64(maxScore)) * 100
+}
+
+func isPassingScore(rawScore int) bool {
+	return rawScore > 0
 }
 
 func buildEvaluationContext(caseDef benchcase.Case, result Result, fs *virtualFS) evaluationContext {
@@ -685,6 +788,8 @@ func evaluateCheck(ctx evaluationContext, check benchcase.Check) []string {
 		}
 	case "duplicate_read_same_content":
 		return duplicateReadMatches(ctx.fs.logs)
+	case "read_missing_file_after_list_dir":
+		return missingFileReadsAfterListDir(ctx.fs.logs)
 	case "ratio_below":
 		if ctx.metrics.ReadWriteRatio != nil && *ctx.metrics.ReadWriteRatio < check.Threshold {
 			return []string{fmt.Sprintf("read:write ratio %.2f is below %.2f", *ctx.metrics.ReadWriteRatio, check.Threshold)}
@@ -779,6 +884,22 @@ func duplicateReadMatches(logs []ToolCallLog) []string {
 			continue
 		}
 		seen[key] = true
+	}
+	return matches
+}
+
+func missingFileReadsAfterListDir(logs []ToolCallLog) []string {
+	matches := make([]string, 0)
+	for _, log := range logs {
+		if !isMissingFileReadError(log) {
+			continue
+		}
+		filePath := normalizeFile(stringValue(log.Input["path"]))
+		parentDir := normalizeDir(path.Dir(filePath))
+		if !hasSuccessfulListDirBefore(logs, parentDir, log.Sequence) {
+			continue
+		}
+		matches = append(matches, fmt.Sprintf("%s was read after listing %s, but the file does not exist", filePath, parentDir))
 	}
 	return matches
 }
@@ -906,6 +1027,27 @@ func hasSuccessfulListDir(logs []ToolCallLog, dir string) bool {
 		}
 	}
 	return false
+}
+
+func hasSuccessfulListDirBefore(logs []ToolCallLog, dir string, beforeSeq int) bool {
+	target := normalizeDir(dir)
+	for _, log := range logs {
+		if log.Sequence >= beforeSeq {
+			return false
+		}
+		if log.Tool == "list_dir" && !log.IsError && normalizeDir(stringValue(log.Input["path"])) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func isMissingFileReadError(log ToolCallLog) bool {
+	if log.Tool != "read_file" || !log.IsError {
+		return false
+	}
+	msg := strings.TrimSpace(fmt.Sprint(log.Result))
+	return strings.HasPrefix(msg, `error: file "`) && strings.HasSuffix(msg, `" not found`)
 }
 
 func normalizeDir(value string) string {

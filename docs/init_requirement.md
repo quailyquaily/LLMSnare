@@ -229,10 +229,10 @@ profiles:
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `provider` | string | 是 | 无 | 模型供应商。v1 支持 `openai`、`anthropic`、`gemini`、`cloudflare`。 |
+| `provider` | string | 是 | 无 | 模型供应商。v1 支持 `openai`、`openai_resp`、`anthropic`、`gemini`、`cloudflare`。 |
 | `model` | string | 是 | 无 | 目标模型名。 |
 | `endpoint` | string | 否 | provider-specific default | API 基地址覆盖值。 |
-| `api_key` | string | 条件必填 | 无 | `openai`、`anthropic`、`gemini` 使用的 API key，支持 `${ENV_NAME}`。 |
+| `api_key` | string | 条件必填 | 无 | `openai`、`openai_resp`、`anthropic`、`gemini` 使用的 API key，支持 `${ENV_NAME}`。 |
 | `account_id` | string | 条件必填 | 无 | `cloudflare` 使用的 Account ID，支持 `${ENV_NAME}`。 |
 | `api_token` | string | 条件必填 | 无 | `cloudflare` 使用的 API token，支持 `${ENV_NAME}`。 |
 | `timeout` | string | 否 | `300s` | 单次 benchmark 运行该 profile 的请求超时，使用 Go duration 语法。 |
@@ -251,6 +251,7 @@ profiles:
 - 当 `llmsnare run` 不带参数时，系统运行全部 profile；执行顺序按 profile 名称字典序稳定排序。
 - `provider` 表示供应商，不再使用 `driver` 这个名字。
 - `endpoint` 是 provider-specific base URL 覆盖值；省略时使用默认值。
+- `openai_resp` 走 OpenAI Responses API，只支持官方默认基地址，不支持自定义兼容端点。
 - `cloudflare` 需要 `account_id` 和 `api_token`，不使用 `api_key`。
 - `timeout` 按 Go duration 解析；解析失败属于配置错误。
 - `temperature` 和 `max_output_tokens` 是 profile 级参数，不提供全局覆盖。

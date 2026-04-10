@@ -98,6 +98,18 @@ Expose timelines over HTTP:
 llmsnare serve --config ./config.yaml
 ```
 
+## Release
+
+Push a version tag to trigger the GitHub Actions release workflow:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow runs GoReleaser and publishes Linux `amd64` and `arm64`
+binaries plus `checksums.txt` to the GitHub Release.
+
 ## Config
 
 Example:
@@ -129,9 +141,11 @@ Notes:
 - if `benchmarks/` is empty, run `llmsnare init`
 - if cases already exist, run `llmsnare cases` and then pass `--case`
 - `run --persist` appends JSONL entries under `storage.timeline_dir`
-- use Linux `cron` to schedule repeated runs
+- use Linux `cron` to schedule repeated runs; see [linux_cron_examples.md](./docs/linux_cron_examples.md)
+- supported providers are `openai`, `openai_resp`, `anthropic`, `gemini`, and `cloudflare`
 - `api_key` supports `${ENV_NAME}` expansion
 - `endpoint` is optional; if omitted, a provider-specific default is used
+- `openai_resp` uses the native OpenAI Responses API and currently requires the default OpenAI base URL
 - `cloudflare` profiles use `account_id` plus `api_token` instead of `api_key`
 - Anthropic endpoint overrides are currently rejected because the configured `uniai` provider does not expose a custom base URL
 
@@ -140,6 +154,10 @@ Example Linux `cron` entry:
 ```cron
 0 */6 * * * /usr/local/bin/llmsnare run openai_gpt4o --config /etc/llmsnare/config.yaml --case read_write_ratio_sample --persist
 ```
+
+More examples:
+
+- [linux_cron_examples.md](./docs/linux_cron_examples.md)
 
 Cloudflare example:
 

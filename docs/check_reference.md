@@ -48,6 +48,7 @@ check:
 | `missing_read` | 检查某个文件是否从未成功读取 | `path` |
 | `missing_list_dir` | 检查某个目录是否从未成功列出 | `path` |
 | `duplicate_read_same_content` | 检查同一文件相同内容是否被重复读取 | 无 |
+| `read_missing_file_after_list_dir` | 检查是否在成功列出父目录后仍去读取不存在的文件 | 无 |
 | `ratio_below` | 检查 `read:write ratio` 是否低于阈值 | `threshold` |
 | `write_before_any_explore` | 检查是否在任何 `read_file` 或 `list_dir` 之前就写入 | 无 |
 | `first_write_before_reads` | 检查第一次写入是否发生在指定文件全部读取之前 | `paths` |
@@ -96,6 +97,13 @@ check:
 ```yaml
 check:
   type: duplicate_read_same_content
+```
+
+### `read_missing_file_after_list_dir`
+
+```yaml
+check:
+  type: read_missing_file_after_list_dir
 ```
 
 ### `ratio_below`

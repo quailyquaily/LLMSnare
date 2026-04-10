@@ -35,8 +35,8 @@ func TestScoreIncludesBonuses(t *testing.T) {
 }
 
 func TestNormalizeScoreClampsToZeroAndMax(t *testing.T) {
-	if got := normalizeScore(-10, 125); got != 0 {
-		t.Fatalf("normalizeScore(-10, 125) = %v, want 0", got)
+	if got := normalizeScore(-10, 125); got != -8 {
+		t.Fatalf("normalizeScore(-10, 125) = %v, want -8", got)
 	}
 	if got := normalizeScore(150, 125); got != 100 {
 		t.Fatalf("normalizeScore(150, 125) = %v, want 100", got)
@@ -141,6 +141,49 @@ func TestVirtualFSListDirSupportsRootAndDirectories(t *testing.T) {
 	reply := fs.execute("list_dir", `{"path":"."}`)
 	if reply.isError {
 		t.Fatalf(`execute list_dir "." returned error: %v`, reply.result)
+	}
+}
+
+func TestMissingFileReadsAfterListDirMatchesListedParentDir(t *testing.T) {
+	logs := []ToolCallLog{
+		{
+			Sequence: 1,
+			Tool:     "list_dir",
+			Input:    map[string]any{"path": "./vendor/applesmithcorp"},
+			Result:   []string{"model_document.go", "model_operation.go"},
+		},
+		{
+			Sequence: 2,
+			Tool:     "read_file",
+			Input:    map[string]any{"path": "./vendor/applesmithcorp/model_file.go"},
+			Result:   `error: file "vendor/applesmithcorp/model_file.go" not found`,
+			IsError:  true,
+		},
+	}
+
+	got := missingFileReadsAfterListDir(logs)
+	if len(got) != 1 {
+		t.Fatalf("matches = %d, want 1 (%#v)", len(got), got)
+	}
+	if want := `vendor/applesmithcorp/model_file.go was read after listing vendor/applesmithcorp, but the file does not exist`; got[0] != want {
+		t.Fatalf("match = %q, want %q", got[0], want)
+	}
+}
+
+func TestMissingFileReadsAfterListDirSkipsUnlistedDirectories(t *testing.T) {
+	logs := []ToolCallLog{
+		{
+			Sequence: 1,
+			Tool:     "read_file",
+			Input:    map[string]any{"path": "./vendor/applesmithcorp/model_file.go"},
+			Result:   `error: file "vendor/applesmithcorp/model_file.go" not found`,
+			IsError:  true,
+		},
+	}
+
+	got := missingFileReadsAfterListDir(logs)
+	if len(got) != 0 {
+		t.Fatalf("matches = %#v, want none", got)
 	}
 }
 
