@@ -2,7 +2,6 @@ package benchmark
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -222,16 +221,17 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 			ToolCalls: len(resp.ToolCalls),
 		})
 
-		toolCalls := normalizeToolCallsForProvider(profile.Provider, resp.ToolCalls)
-		messages = append(messages, uniai.Message{
-			Role:      uniai.RoleAssistant,
-			Content:   resp.Text,
-			ToolCalls: toolCalls,
-		})
+		toolCalls := replayToolCallsForProvider(profile.Provider, resp.ToolCalls)
+		messages = append(messages, assistantToolReplayMessage(resp.Text, toolCalls))
 
 		for _, toolCall := range toolCalls {
 			reply := fs.execute(toolCall.Function.Name, toolCall.Function.Arguments)
-			messages = append(messages, uniai.ToolResult(toolCall.ID, formatToolResultForProvider(profile.Provider, toolCall.Function.Name, reply)))
+			toolResult, err := toolResultMessageForProvider(profile.Provider, toolCall, reply)
+			if err != nil {
+				runErr = fmt.Errorf("tool result round %d: %w", roundNumber, err)
+				break
+			}
+			messages = append(messages, toolResult)
 
 			if len(fs.logs) == 0 {
 				continue
@@ -250,6 +250,9 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 				event.Error = fmt.Sprint(last.Result)
 			}
 			r.report(event)
+		}
+		if runErr != nil {
+			break
 		}
 	}
 
@@ -313,91 +316,76 @@ func cloneToolCalls(toolCalls []uniai.ToolCall) []uniai.ToolCall {
 	return out
 }
 
-func normalizeToolCallsForProvider(provider string, toolCalls []uniai.ToolCall) []uniai.ToolCall {
+func assistantToolReplayMessage(text string, toolCalls []uniai.ToolCall) uniai.Message {
+	msg := uniai.AssistantToolCalls(toolCalls...)
+	msg.Content = text
+	return msg
+}
+
+func replayToolCallsForProvider(provider string, toolCalls []uniai.ToolCall) []uniai.ToolCall {
 	calls := cloneToolCalls(toolCalls)
 	if !strings.EqualFold(strings.TrimSpace(provider), "gemini") {
 		return calls
 	}
-	return ensureGeminiToolCallThoughtSignatures(calls)
-}
 
-func formatToolResultForProvider(provider, toolName string, reply toolResponse) string {
-	if !strings.EqualFold(strings.TrimSpace(provider), "gemini") {
-		return reply.modelOutput
-	}
-
-	payload := make(map[string]any, 1)
-	if reply.isError {
-		payload["error"] = fmt.Sprint(reply.result)
-	} else {
-		switch toolName {
-		case "list_dir":
-			payload["entries"] = reply.result
-		case "read_file":
-			payload["content"] = fmt.Sprint(reply.result)
-		case "write_file":
-			payload["status"] = fmt.Sprint(reply.result)
-		default:
-			payload["result"] = reply.result
-		}
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return `{"error":"failed to encode tool result"}`
-	}
-	return string(data)
-}
-
-func ensureGeminiToolCallThoughtSignatures(toolCalls []uniai.ToolCall) []uniai.ToolCall {
+	// Gemini can return a signature only on the first tool call in a parallel batch,
+	// but the current uniai replay validation still expects every replayed call to carry one.
 	lastSignature := ""
-	for i := range toolCalls {
-		signature := strings.TrimSpace(toolCalls[i].ThoughtSignature)
+	for i := range calls {
+		signature := strings.TrimSpace(calls[i].ThoughtSignature)
 		if signature == "" {
-			_, decoded := splitGeminiToolCallIDAndThoughtSignature(toolCalls[i].ID)
-			signature = decoded
+			signature = decodeGeminiThoughtSignatureFromToolCallID(calls[i].ID)
 		}
 		if signature == "" {
 			signature = lastSignature
 		}
 		if signature == "" {
-			signature = synthesizeGeminiThoughtSignature(toolCalls[i])
+			continue
 		}
-		toolCalls[i].ThoughtSignature = signature
-		if signature != "" {
-			lastSignature = signature
-		}
+		calls[i].ThoughtSignature = signature
+		lastSignature = signature
 	}
-	return toolCalls
+	return calls
 }
 
-func splitGeminiToolCallIDAndThoughtSignature(callID string) (string, string) {
+func toolResultMessageForProvider(provider string, toolCall uniai.ToolCall, reply toolResponse) (uniai.Message, error) {
+	if !strings.EqualFold(strings.TrimSpace(provider), "gemini") {
+		return uniai.ToolResult(toolCall.ID, reply.modelOutput), nil
+	}
+	return uniai.ToolResultValue(toolCall.ID, geminiToolResultValue(toolCall.Function.Name, reply))
+}
+
+func geminiToolResultValue(toolName string, reply toolResponse) any {
+	if reply.isError {
+		return map[string]any{"error": fmt.Sprint(reply.result)}
+	}
+	switch toolName {
+	case "list_dir":
+		return map[string]any{"entries": reply.result}
+	case "read_file":
+		return map[string]any{"content": fmt.Sprint(reply.result)}
+	case "write_file":
+		return map[string]any{"status": fmt.Sprint(reply.result)}
+	default:
+		return reply.result
+	}
+}
+
+func decodeGeminiThoughtSignatureFromToolCallID(callID string) string {
 	callID = strings.TrimSpace(callID)
 	if callID == "" {
-		return "", ""
+		return ""
 	}
 	idx := strings.LastIndex(callID, "|ts:")
 	if idx <= 0 || idx+4 >= len(callID) {
-		return callID, ""
+		return ""
 	}
 	encoded := callID[idx+4:]
 	decoded, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil {
-		return callID, ""
+		return ""
 	}
-	baseID := callID[:idx]
-	if strings.TrimSpace(baseID) == "" {
-		return callID, ""
-	}
-	return baseID, string(decoded)
-}
-
-func synthesizeGeminiThoughtSignature(call uniai.ToolCall) string {
-	seed := strings.TrimSpace(call.ID) + "\n" +
-		strings.TrimSpace(call.Function.Name) + "\n" +
-		strings.TrimSpace(call.Function.Arguments)
-	sum := sha256.Sum256([]byte(seed))
-	return fmt.Sprintf("llmsnare_ts_%x", sum[:8])
+	return string(decoded)
 }
 
 func failureResult(caseID, profileName string, profile config.Profile, err error) Result {
