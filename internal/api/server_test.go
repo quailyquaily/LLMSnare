@@ -49,7 +49,7 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 		t.Fatalf("Append returned error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/timelines/demo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/timelines/demo", nil)
 	rec := httptest.NewRecorder()
 	NewServer(store).routes().ServeHTTP(rec, req)
 
@@ -90,5 +90,25 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 
 	if _, ok := entry["tool_calls"]; ok {
 		t.Fatal("entry unexpectedly contains tool_calls")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, "*")
+	}
+}
+
+func TestRoutesHandlesCORSPreflight(t *testing.T) {
+	req := httptest.NewRequest(http.MethodOptions, "/v1/timelines/demo", nil)
+	rec := httptest.NewRecorder()
+
+	NewServer(storage.New(t.TempDir())).routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, "*")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "GET, OPTIONS" {
+		t.Fatalf("Access-Control-Allow-Methods = %q, want %q", got, "GET, OPTIONS")
 	}
 }

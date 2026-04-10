@@ -218,14 +218,15 @@ When running `serve`, the daemon exposes:
 
 - `GET /healthz`
 - `GET /openapi.yaml`
-- `GET /api/v1/timelines`
-- `GET /api/v1/timelines/{profile}`
+- `GET /v1/timelines`
+- `GET /v1/timelines/{profile}`
 
 Response shapes:
 
 - `GET /healthz` returns `{"status":"ok"}`
-- `GET /api/v1/timelines` returns `{"profiles":{"<profile>":[BenchmarkResult,...]}}`
-- `GET /api/v1/timelines/{profile}` returns `{"profile":"<profile>","entries":[BenchmarkResult,...]}`
+- `GET /v1/timelines` returns `{"profiles":{"<profile>":[BenchmarkResult,...]}}`
+- `GET /v1/timelines/{profile}` returns `{"profile":"<profile>","entries":[BenchmarkResult,...]}`
+- all endpoints include `Access-Control-Allow-Origin: *` for browser access
 
 Each `BenchmarkResult` includes:
 

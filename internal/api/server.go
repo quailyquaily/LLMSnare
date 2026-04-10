@@ -71,9 +71,9 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/openapi.yaml", s.handleOpenAPI)
-	mux.HandleFunc("/api/v1/timelines", s.handleTimelines)
-	mux.HandleFunc("/api/v1/timelines/", s.handleTimelineProfile)
-	return mux
+	mux.HandleFunc("/v1/timelines", s.handleTimelines)
+	mux.HandleFunc("/v1/timelines/", s.handleTimelineProfile)
+	return withCORS(mux)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +107,7 @@ func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile := strings.TrimPrefix(r.URL.Path, "/api/v1/timelines/")
+	profile := strings.TrimPrefix(r.URL.Path, "/v1/timelines/")
 	if profile == "" {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "profile not found"})
 		return
@@ -188,4 +188,19 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

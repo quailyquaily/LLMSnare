@@ -29,7 +29,7 @@ paths:
             application/yaml:
               schema:
                 type: string
-  /api/v1/timelines:
+  /v1/timelines:
     get:
       summary: List timeline entries for all profiles
       parameters:
@@ -55,7 +55,7 @@ paths:
                       items:
                         $ref: "#/components/schemas/BenchmarkResult"
                 required: [profiles]
-  /api/v1/timelines/{profile}:
+  /v1/timelines/{profile}:
     get:
       summary: List timeline entries for one profile
       parameters:
