@@ -46,6 +46,36 @@ func TestListIncludesDefaultCase(t *testing.T) {
 	}
 }
 
+func TestListIncludesSymlinkedCaseDir(t *testing.T) {
+	requireSymlinkSupport(t)
+
+	scaffold := mustFindScaffold(t, BuiltinCaseRelPath)
+	realCaseDir := writeScaffold(t, scaffold)
+
+	root := t.TempDir()
+	linkDir := filepath.Join(root, DefaultCasesRelDir, "linked_case")
+	if err := os.MkdirAll(filepath.Dir(linkDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realCaseDir, linkDir); err != nil {
+		t.Fatal(err)
+	}
+
+	items, warnings, err := List(filepath.Join(root, DefaultCasesRelDir))
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("List warnings = %#v, want none", warnings)
+	}
+	if len(items) != 1 {
+		t.Fatalf("List returned %d items, want 1", len(items))
+	}
+	if got := filepath.Base(items[0].Dir); got != "linked_case" {
+		t.Fatalf("case dir = %q, want %q", got, "linked_case")
+	}
+}
+
 func TestListSkipsBrokenCasesAndReturnsWarnings(t *testing.T) {
 	scaffold := mustFindScaffold(t, BuiltinCaseRelPath)
 	root := t.TempDir()
@@ -171,6 +201,46 @@ scoring:
 	}
 }
 
+func TestLoadDirReadsRootFSFromSymlinkedDirectory(t *testing.T) {
+	requireSymlinkSupport(t)
+
+	caseDir := t.TempDir()
+	content := `version: 1
+id: symlink_rootfs
+prompt: hi
+scoring:
+  deductions: []
+  bonuses: []
+`
+	if err := os.WriteFile(filepath.Join(caseDir, "case.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sharedDir := filepath.Join(t.TempDir(), "shared")
+	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sharedDir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rootFSDir := filepath.Join(caseDir, DefaultRootFSRelDir())
+	if err := os.MkdirAll(rootFSDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(sharedDir, filepath.Join(rootFSDir, "linked")); err != nil {
+		t.Fatal(err)
+	}
+
+	caseDef, err := LoadDir(caseDir)
+	if err != nil {
+		t.Fatalf("LoadDir returned error: %v", err)
+	}
+	if got := caseDef.RootFSFiles["linked/main.go"]; got != "package main\n" {
+		t.Fatalf("rootfs linked/main.go = %q, want %q", got, "package main\n")
+	}
+}
+
 func TestSummarizePromptUsesFirstNonEmptyLine(t *testing.T) {
 	got := summarizePrompt("\n\nfirst line\nsecond line")
 	if got != "first line" {
@@ -249,4 +319,18 @@ func containsKeys(files map[string]string, want []string) bool {
 		}
 	}
 	return true
+}
+
+func requireSymlinkSupport(t *testing.T) {
+	t.Helper()
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
 }

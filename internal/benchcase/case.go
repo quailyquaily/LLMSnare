@@ -101,21 +101,8 @@ func List(root string) ([]Summary, []ListWarning, error) {
 
 	items := make([]Summary, 0)
 	warnings := make([]ListWarning, 0)
-	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			if filepath.Clean(current) == root {
-				return err
-			}
-			warnings = append(warnings, ListWarning{
-				Dir:     current,
-				Message: err.Error(),
-			})
-			if entry != nil && entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() || entry.Name() != "case.yaml" {
+	err := walkOSFilesFollowSymlinkDirs(root, func(current string) error {
+		if filepath.Base(current) != "case.yaml" {
 			return nil
 		}
 
@@ -136,6 +123,11 @@ func List(root string) ([]Summary, []ListWarning, error) {
 			RootFSFiles:   len(caseDef.RootFSFiles),
 		})
 		return nil
+	}, func(current string, err error) {
+		warnings = append(warnings, ListWarning{
+			Dir:     current,
+			Message: err.Error(),
+		})
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("list benchmark cases: %w", err)
@@ -214,14 +206,7 @@ func normalizePaths(paths []string) []string {
 
 func loadRootFSFiles(root string) (map[string]string, error) {
 	files := map[string]string{}
-	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-
+	err := walkOSFilesFollowSymlinkDirs(root, func(current string) error {
 		data, readErr := os.ReadFile(current)
 		if readErr != nil {
 			return readErr
@@ -232,7 +217,7 @@ func loadRootFSFiles(root string) (map[string]string, error) {
 		}
 		files[path.Clean(filepath.ToSlash(rel))] = string(data)
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("load case rootfs: %w", err)
 	}
@@ -267,6 +252,83 @@ func loadRootFSFilesFromFS(fsys fs.FS, root string) (map[string]string, error) {
 		return nil, fmt.Errorf("case rootfs %q did not contain any files", root)
 	}
 	return files, nil
+}
+
+func walkOSFilesFollowSymlinkDirs(root string, visitFile func(current string) error, reportError func(current string, err error)) error {
+	return walkOSFilesFollowSymlinkDirsRec(root, map[string]struct{}{}, visitFile, reportError, true)
+}
+
+func walkOSFilesFollowSymlinkDirsRec(current string, stack map[string]struct{}, visitFile func(current string) error, reportError func(current string, err error), isRoot bool) error {
+	info, err := os.Lstat(current)
+	if err != nil {
+		if isRoot || reportError == nil {
+			return err
+		}
+		reportError(current, err)
+		return nil
+	}
+
+	isDir, realPath, err := resolveWalkDir(current, info)
+	if err != nil {
+		if isRoot || reportError == nil {
+			return err
+		}
+		reportError(current, err)
+		return nil
+	}
+	if !isDir {
+		return visitFile(current)
+	}
+	if realPath != "" {
+		if _, seen := stack[realPath]; seen {
+			return nil
+		}
+		stack[realPath] = struct{}{}
+		defer delete(stack, realPath)
+	}
+
+	entries, err := os.ReadDir(current)
+	if err != nil {
+		if isRoot || reportError == nil {
+			return err
+		}
+		reportError(current, err)
+		return nil
+	}
+	for _, entry := range entries {
+		child := filepath.Join(current, entry.Name())
+		if err := walkOSFilesFollowSymlinkDirsRec(child, stack, visitFile, reportError, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolveWalkDir(current string, info os.FileInfo) (bool, string, error) {
+	if info.Mode()&os.ModeSymlink == 0 {
+		if !info.IsDir() {
+			return false, "", nil
+		}
+		realPath, err := filepath.EvalSymlinks(current)
+		if err != nil {
+			return true, "", err
+		}
+		return true, filepath.Clean(realPath), nil
+	}
+
+	targetInfo, err := os.Stat(current)
+	if err != nil {
+		return false, "", err
+	}
+	if !targetInfo.IsDir() {
+		return false, "", nil
+	}
+
+	realPath, err := filepath.EvalSymlinks(current)
+	if err != nil {
+		return true, "", err
+	}
+	return true, filepath.Clean(realPath), nil
 }
 
 func normalizeRelPath(raw string) string {
