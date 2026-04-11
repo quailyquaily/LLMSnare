@@ -179,7 +179,6 @@ profiles:
     model: "gpt-4o"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
-    temperature: 0
     max_output_tokens: 4096
 
   claude_sonnet:
@@ -187,7 +186,6 @@ profiles:
     model: "claude-3-5-sonnet-latest"
     api_key: "${ANTHROPIC_API_KEY}"
     timeout: 300s
-    temperature: 0
     max_output_tokens: 4096
 
   cf_llama:
@@ -196,7 +194,6 @@ profiles:
     account_id: "${CLOUDFLARE_ACCOUNT_ID}"
     api_token: "${CLOUDFLARE_API_TOKEN}"
     timeout: 300s
-    temperature: 0
     max_output_tokens: 4096
 ```
 
@@ -236,7 +233,7 @@ profiles:
 | `account_id` | string | 条件必填 | 无 | `cloudflare` 使用的 Account ID，支持 `${ENV_NAME}`。 |
 | `api_token` | string | 条件必填 | 无 | `cloudflare` 使用的 API token，支持 `${ENV_NAME}`。 |
 | `timeout` | string | 否 | `300s` | 单次 benchmark 运行该 profile 的请求超时，使用 Go duration 语法。 |
-| `temperature` | number | 否 | `0` | 采样温度。v1 默认用 `0`，尽量减少波动。 |
+| `temperature` | number | 否 | 不指定 | 采样温度。只有配置里显式写了这个字段，才会传给上游模型。 |
 | `max_output_tokens` | integer | 否 | `4096` | 单次生成允许的最大输出 token 数。 |
 
 如果 `timeline` 目录未配置，系统默认使用：
@@ -283,7 +280,6 @@ profiles:
     model: "gpt-4o"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
-    temperature: 0
     max_output_tokens: 4096
 ```
 

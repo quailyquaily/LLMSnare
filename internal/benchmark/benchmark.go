@@ -192,16 +192,19 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 			MaxRounds: maxRounds,
 		})
 
-		resp, err := client.Chat(ctx,
+		opts := []uniai.ChatOption{
 			uniai.WithProvider(profile.Provider),
 			uniai.WithModel(profile.Model),
 			uniai.WithReplaceMessages(messages...),
 			uniai.WithTools(tools),
 			uniai.WithToolChoice(uniai.ToolChoiceAuto()),
 			uniai.WithToolsEmulationMode(uniai.ToolsEmulationOff),
-			uniai.WithTemperature(profile.Temperature),
 			uniai.WithMaxTokens(profile.MaxOutputTokens),
-		)
+		}
+		if profile.Temperature != nil {
+			opts = append(opts, uniai.WithTemperature(*profile.Temperature))
+		}
+		resp, err := client.Chat(ctx, opts...)
 		if err != nil {
 			runErr = fmt.Errorf("chat round %d: %w", roundNumber, err)
 			break

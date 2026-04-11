@@ -133,7 +133,6 @@ profiles:
     model: "gpt-4o"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
-    temperature: 0
     max_output_tokens: 4096
 ```
 
@@ -173,7 +172,6 @@ profiles:
     account_id: "${CLOUDFLARE_ACCOUNT_ID}"
     api_token: "${CLOUDFLARE_API_TOKEN}"
     timeout: 300s
-    temperature: 0
     max_output_tokens: 4096
 ```
 

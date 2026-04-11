@@ -233,6 +233,54 @@ func TestRunWithClientDisablesToolEmulationFallbackForOpenAI(t *testing.T) {
 	}
 }
 
+func TestRunWithClientOmitsTemperatureWhenUnset(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	client := &recordingChatClient{}
+
+	_, err := NewRunner().RunWithClient(
+		context.Background(),
+		caseDef,
+		"openai_profile",
+		config.Profile{Provider: "openai", Model: "gpt-4o"},
+		client,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.reqs) == 0 {
+		t.Fatal("expected at least one chat request")
+	}
+	if got := client.reqs[0].Options.Temperature; got != nil {
+		t.Fatalf("temperature = %#v, want nil when unset", got)
+	}
+}
+
+func TestRunWithClientPassesExplicitTemperature(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	client := &recordingChatClient{}
+	temperature := 0.0
+
+	_, err := NewRunner().RunWithClient(
+		context.Background(),
+		caseDef,
+		"openai_profile",
+		config.Profile{Provider: "openai", Model: "gpt-4o", Temperature: &temperature},
+		client,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.reqs) == 0 {
+		t.Fatal("expected at least one chat request")
+	}
+	if client.reqs[0].Options.Temperature == nil {
+		t.Fatal("temperature = nil, want explicit value")
+	}
+	if got := *client.reqs[0].Options.Temperature; got != 0 {
+		t.Fatalf("temperature = %v, want 0", got)
+	}
+}
+
 func TestAssistantToolReplayMessagePreservesToolCallsAndContent(t *testing.T) {
 	toolCalls := []uniai.ToolCall{
 		{

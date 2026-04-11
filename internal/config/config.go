@@ -50,7 +50,7 @@ type Profile struct {
 	AccountID       string        `yaml:"account_id"`
 	APIToken        string        `yaml:"api_token"`
 	Timeout         time.Duration `yaml:"-"`
-	Temperature     float64       `yaml:"temperature"`
+	Temperature     *float64      `yaml:"temperature"`
 	MaxOutputTokens int           `yaml:"max_output_tokens"`
 
 	TimeoutRaw string `yaml:"timeout"`
@@ -250,7 +250,6 @@ profiles:
     model: "gpt-4o"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
-    temperature: 0
     max_output_tokens: 4096
 `
 }

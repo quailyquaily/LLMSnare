@@ -45,6 +45,40 @@ profiles:
 	if got := cfg.Serve.Listen; got != "127.0.0.1:9999" {
 		t.Fatalf("listen = %q, want %q", got, "127.0.0.1:9999")
 	}
+	if cfg.Profiles["demo"].Temperature != nil {
+		t.Fatalf("temperature = %#v, want nil when omitted", cfg.Profiles["demo"].Temperature)
+	}
+}
+
+func TestLoadKeepsExplicitTemperature(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "secret")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	content := `version: 1
+storage: {}
+profiles:
+  demo:
+    provider: openai
+    model: gpt-4o
+    api_key: ${OPENAI_API_KEY}
+    temperature: 0
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.Profiles["demo"].Temperature == nil {
+		t.Fatal("temperature = nil, want explicit zero value")
+	}
+	if got := *cfg.Profiles["demo"].Temperature; got != 0 {
+		t.Fatalf("temperature = %v, want 0", got)
+	}
 }
 
 func TestLoadRejectsAnthropicEndpointOverride(t *testing.T) {
