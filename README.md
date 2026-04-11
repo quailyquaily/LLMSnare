@@ -62,6 +62,12 @@ Run all profiles:
 llmsnare run --config ./config.yaml
 ```
 
+Run multiple profiles in parallel while avoiding same-prefix profiles at the same time:
+
+```bash
+llmsnare run --config ./config.yaml --parallel 4
+```
+
 Print JSON:
 
 ```bash

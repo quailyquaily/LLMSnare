@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 func newRunCommand() *cobra.Command {
 	var asJSON bool
 	var caseRef string
+	var parallel int
 	var persist bool
 
 	cmd := &cobra.Command{
@@ -40,18 +43,20 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if parallel < 1 {
+				return fmt.Errorf("--parallel must be at least 1")
+			}
 
-			results := make([]benchmark.Result, 0, len(profiles))
-			for i, namedProfile := range profiles {
+			var progressMu sync.Mutex
+			results, err := executeProfiles(cmd.Context(), profiles, parallel, func(ctx context.Context, profileIndex, totalProfiles int, namedProfile namedProfile) (benchmark.Result, error) {
 				runner := benchmark.NewRunner()
-				if reporter := runProgressReporter(cmd, asJSON, i+1, len(profiles)); reporter != nil {
+				if reporter := runProgressReporter(cmd, asJSON, profileIndex, totalProfiles, &progressMu); reporter != nil {
 					runner = benchmark.NewRunner(benchmark.WithProgressReporter(reporter))
 				}
-				result, runErr := runner.Run(cmd.Context(), caseDef, namedProfile.Name, namedProfile.Profile)
-				if runErr != nil {
-					return runErr
-				}
-				results = append(results, result)
+				return runner.Run(ctx, caseDef, namedProfile.Name, namedProfile.Profile)
+			})
+			if err != nil {
+				return err
 			}
 
 			if persist {
@@ -80,6 +85,7 @@ func newRunCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print results as JSON")
+	cmd.Flags().IntVar(&parallel, "parallel", 1, "Run up to N profiles at the same time")
 	cmd.Flags().BoolVar(&persist, "persist", false, "Append results to timeline storage")
 	cmd.Flags().StringVar(&caseRef, "case", "", "Case ID or case directory path")
 	return cmd
@@ -122,11 +128,131 @@ func selectProfiles(cfg config.Config, args []string) ([]namedProfile, error) {
 	return result, nil
 }
 
-func runProgressReporter(cmd *cobra.Command, asJSON bool, profileIndex, totalProfiles int) benchmark.ProgressReporter {
+type profileRunFunc func(context.Context, int, int, namedProfile) (benchmark.Result, error)
+
+type queuedProfile struct {
+	index int
+	item  namedProfile
+	group string
+}
+
+type profileCompletion struct {
+	index  int
+	group  string
+	result benchmark.Result
+	err    error
+}
+
+func executeProfiles(ctx context.Context, profiles []namedProfile, parallel int, run profileRunFunc) ([]benchmark.Result, error) {
+	if parallel < 1 {
+		return nil, fmt.Errorf("parallel must be at least 1")
+	}
+	if len(profiles) == 0 {
+		return nil, nil
+	}
+	if parallel == 1 || len(profiles) == 1 {
+		results := make([]benchmark.Result, 0, len(profiles))
+		for i, namedProfile := range profiles {
+			result, err := run(ctx, i+1, len(profiles), namedProfile)
+			if err != nil {
+				return nil, err
+			}
+			results = append(results, result)
+		}
+		return results, nil
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	pending := make([]queuedProfile, 0, len(profiles))
+	for i, namedProfile := range profiles {
+		pending = append(pending, queuedProfile{
+			index: i,
+			item:  namedProfile,
+			group: profileGroup(namedProfile.Name),
+		})
+	}
+
+	results := make([]benchmark.Result, len(profiles))
+	done := make(chan profileCompletion, len(profiles))
+	activeGroups := make(map[string]bool)
+	active := 0
+	var firstErr error
+
+	dispatch := func() {
+		for active < parallel {
+			next := -1
+			for i, item := range pending {
+				if activeGroups[item.group] {
+					continue
+				}
+				next = i
+				break
+			}
+			if next == -1 {
+				return
+			}
+
+			task := pending[next]
+			pending = append(pending[:next], pending[next+1:]...)
+			activeGroups[task.group] = true
+			active++
+
+			go func(task queuedProfile) {
+				result, err := run(runCtx, task.index+1, len(profiles), task.item)
+				done <- profileCompletion{
+					index:  task.index,
+					group:  task.group,
+					result: result,
+					err:    err,
+				}
+			}(task)
+		}
+	}
+
+	dispatch()
+	for active > 0 {
+		completion := <-done
+		results[completion.index] = completion.result
+		delete(activeGroups, completion.group)
+		active--
+
+		if completion.err != nil && firstErr == nil {
+			firstErr = completion.err
+			cancel()
+		}
+		if firstErr == nil {
+			dispatch()
+		}
+	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return results, nil
+}
+
+func profileGroup(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if cut := strings.IndexAny(name, "_.-"); cut > 0 {
+		return name[:cut]
+	}
+	return name
+}
+
+func runProgressReporter(cmd *cobra.Command, asJSON bool, profileIndex, totalProfiles int, mu *sync.Mutex) benchmark.ProgressReporter {
 	if asJSON {
 		return nil
 	}
 	return func(event benchmark.ProgressEvent) {
+		if mu != nil {
+			mu.Lock()
+			defer mu.Unlock()
+		}
 		renderRunProgress(cmd.ErrOrStderr(), profileIndex, totalProfiles, event)
 	}
 }
@@ -172,29 +298,30 @@ func renderTextResult(cmd *cobra.Command, result benchmark.Result) {
 func renderRunProgress(out io.Writer, index, total int, event benchmark.ProgressEvent) {
 	style := newANSIStyle(out)
 	prefix := style.progressPrefix(fmt.Sprintf("[%d/%d]", index, total))
+	profileLabel := fmt.Sprintf("profile=%q", event.Profile)
 
 	switch event.Kind {
 	case benchmark.ProgressRunStarted:
-		fmt.Fprintf(out, "%s %s, profile=%s, case=%s\n", prefix, style.header("started"), event.Profile, event.CaseID)
+		fmt.Fprintf(out, "%s %s, %s, case=%s\n", prefix, style.header("started"), profileLabel, event.CaseID)
 	case benchmark.ProgressRoundStarted:
 		return
 	case benchmark.ProgressToolBatch:
-		fmt.Fprintf(out, "%s %s %s: received %d tool calls\n", prefix, style.emphasis("round"), formatRound(event.Round), event.ToolCalls)
+		fmt.Fprintf(out, "%s %s %s, %s: received %d tool calls\n", prefix, style.emphasis("round"), formatRound(event.Round), profileLabel, event.ToolCalls)
 	case benchmark.ProgressToolExecuted:
 		target := style.toolTarget(event.Tool, event.ToolPath)
 		if event.Error != "" {
-			fmt.Fprintf(out, "%s %s %s: %s, %s: %s\n", prefix, style.emphasis("round"), formatRound(event.Round), target, style.fail("failed"), style.fail(event.Error))
+			fmt.Fprintf(out, "%s %s %s, %s: %s, %s: %s\n", prefix, style.emphasis("round"), formatRound(event.Round), profileLabel, target, style.fail("failed"), style.fail(event.Error))
 			return
 		}
-		fmt.Fprintf(out, "%s %s %s: %s\n", prefix, style.emphasis("round"), formatRound(event.Round), target)
+		fmt.Fprintf(out, "%s %s %s, %s: %s\n", prefix, style.emphasis("round"), formatRound(event.Round), profileLabel, target)
 	case benchmark.ProgressRunFinished:
 		status := style.status(formatStatus(event.Success), event.Success)
 		score := style.score(formatPercent(event.NormalizedScore), event.NormalizedScore)
 		if event.Error != "" {
-			fmt.Fprintf(out, "%s %s, status=%s, elapsed=%s, score=%s, error=%s\n", prefix, style.header("finished"), status, formatDuration(event.Elapsed), score, style.fail(event.Error))
+			fmt.Fprintf(out, "%s %s, %s, status=%s, elapsed=%s, score=%s, error=%s\n", prefix, style.header("finished"), profileLabel, status, formatDuration(event.Elapsed), score, style.fail(event.Error))
 			return
 		}
-		fmt.Fprintf(out, "%s %s, status=%s, elapsed=%s, score=%s\n", prefix, style.header("finished"), status, formatDuration(event.Elapsed), score)
+		fmt.Fprintf(out, "%s %s, %s, status=%s, elapsed=%s, score=%s\n", prefix, style.header("finished"), profileLabel, status, formatDuration(event.Elapsed), score)
 	}
 }
 
