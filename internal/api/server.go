@@ -15,6 +15,8 @@ import (
 	"llmsnare/internal/storage"
 )
 
+const maxTimelineEntries = 1024
+
 //go:embed openapi.yaml
 var openAPISpec []byte
 
@@ -30,7 +32,6 @@ type timelineEntry struct {
 	Provider        string                      `json:"provider"`
 	Model           string                      `json:"model"`
 	Success         bool                        `json:"success"`
-	Error           string                      `json:"error,omitempty"`
 	TotalScore      int                         `json:"total_score"`
 	RawScore        int                         `json:"raw_score"`
 	MaxScore        int                         `json:"max_score"`
@@ -41,8 +42,9 @@ type timelineEntry struct {
 }
 
 type timelineBonus struct {
-	Name   string `json:"name"`
-	Points int    `json:"points"`
+	Name        string `json:"name"`
+	Points      int    `json:"points"`
+	Description string `json:"description"`
 }
 
 func NewServer(store *storage.Store) *Server {
@@ -150,7 +152,6 @@ func projectTimelineEntry(entry benchmark.Result) timelineEntry {
 		Provider:        entry.Provider,
 		Model:           entry.Model,
 		Success:         entry.Success,
-		Error:           entry.Error,
 		TotalScore:      entry.TotalScore,
 		RawScore:        entry.RawScore,
 		MaxScore:        entry.MaxScore,
@@ -165,8 +166,9 @@ func projectTimelineBonuses(items []benchmark.ScoreAdjustment) []timelineBonus {
 	projected := make([]timelineBonus, 0, len(items))
 	for _, item := range items {
 		projected = append(projected, timelineBonus{
-			Name:   item.Name,
-			Points: item.Points,
+			Name:        item.Name,
+			Points:      item.Points,
+			Description: item.Description,
 		})
 	}
 	return projected
@@ -175,11 +177,14 @@ func projectTimelineBonuses(items []benchmark.ScoreAdjustment) []timelineBonus {
 func parseLimit(r *http.Request) (int, error) {
 	raw := r.URL.Query().Get("limit")
 	if raw == "" {
-		return 0, nil
+		return maxTimelineEntries, nil
 	}
 	limit, err := strconv.Atoi(raw)
 	if err != nil || limit < 0 {
 		return 0, fmt.Errorf("limit must be a non-negative integer")
+	}
+	if limit == 0 || limit > maxTimelineEntries {
+		return maxTimelineEntries, nil
 	}
 	return limit, nil
 }

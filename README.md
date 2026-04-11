@@ -227,10 +227,11 @@ Response shapes:
 - `GET /v1/timelines` returns `{"profiles":{"<profile>":[BenchmarkResult,...]}}`
 - `GET /v1/timelines/{profile}` returns `{"profile":"<profile>","entries":[BenchmarkResult,...]}`
 - all endpoints include `Access-Control-Allow-Origin: *` for browser access
+- timeline endpoints default to the latest 1024 entries and cap `limit` at 1024
 
 Each `BenchmarkResult` includes:
 
-- run metadata: `timestamp`, `finished_at`, `case_id`, `profile`, `provider`, `model`, `success`, `error`
+- run metadata: `timestamp`, `finished_at`, `case_id`, `profile`, `provider`, `model`, `success`
 - scores: `total_score`, `raw_score`, `max_score`, `normalized_score`
 - automatic metrics: `read_file_calls`, `write_file_calls`, `list_dir_calls`, `read_write_ratio`, `pre_write_read_coverage`
 - scoring details: `deductions`, `bonuses`

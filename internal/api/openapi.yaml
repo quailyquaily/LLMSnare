@@ -38,8 +38,9 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 1024
           required: false
-          description: Return only the last N entries per profile
+          description: Return only the last N entries per profile. Defaults to 1024 and is capped at 1024.
       responses:
         "200":
           description: Timelines keyed by profile name
@@ -69,8 +70,9 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 1024
           required: false
-          description: Return only the last N entries
+          description: Return only the last N entries. Defaults to 1024 and is capped at 1024.
       responses:
         "200":
           description: Timeline entries for the requested profile
@@ -107,8 +109,6 @@ components:
           type: string
         success:
           type: boolean
-        error:
-          type: string
         total_score:
           type: integer
         raw_score:
@@ -176,4 +176,6 @@ components:
           type: string
         points:
           type: integer
-      required: [name, points]
+        description:
+          type: string
+      required: [name, points, description]
