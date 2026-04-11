@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"llmsnare/internal/benchmark"
@@ -22,6 +23,7 @@ var openAPISpec []byte
 
 type Server struct {
 	store *storage.Store
+	cache *responseCache
 }
 
 type timelineEntry struct {
@@ -47,8 +49,21 @@ type timelineBonus struct {
 	Description string `json:"description"`
 }
 
+type responseCache struct {
+	mu      sync.RWMutex
+	entries map[string]cachedResponse
+}
+
+type cachedResponse struct {
+	version string
+	body    []byte
+}
+
 func NewServer(store *storage.Store) *Server {
-	return &Server{store: store}
+	return &Server{
+		store: store,
+		cache: &responseCache{entries: make(map[string]cachedResponse)},
+	}
 }
 
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
@@ -94,12 +109,23 @@ func (s *Server) handleTimelines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := s.store.LoadAll(limit)
+	version, err := s.store.AllVersion()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"profiles": projectTimelineGroups(data)})
+	body, err := s.cachedJSON(cacheKeyAllTimelines(limit), version, func() (any, error) {
+		data, err := s.store.LoadAll(limit)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"profiles": projectTimelineGroups(data)}, nil
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSONBytes(w, http.StatusOK, body)
 }
 
 func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
@@ -115,16 +141,26 @@ func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := s.store.LoadProfile(profile, limit)
+	version, err := s.store.ProfileVersion(profile)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"profile": profile,
-		"entries": projectTimelineEntries(entries),
+	body, err := s.cachedJSON(cacheKeyTimelineProfile(profile, limit), version, func() (any, error) {
+		entries, err := s.store.LoadProfile(profile, limit)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"profile": profile,
+			"entries": projectTimelineEntries(entries),
+		}, nil
 	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSONBytes(w, http.StatusOK, body)
 }
 
 func projectTimelineGroups(groups map[string][]benchmark.Result) map[string][]timelineEntry {
@@ -189,10 +225,51 @@ func parseLimit(r *http.Request) (int, error) {
 	return limit, nil
 }
 
+func cacheKeyAllTimelines(limit int) string {
+	return "all:" + strconv.Itoa(limit)
+}
+
+func cacheKeyTimelineProfile(profile string, limit int) string {
+	return "profile:" + profile + ":" + strconv.Itoa(limit)
+}
+
+func (s *Server) cachedJSON(key, version string, build func() (any, error)) ([]byte, error) {
+	if s.cache != nil {
+		if body, ok := s.cache.get(key, version); ok {
+			return body, nil
+		}
+	}
+
+	payload, err := build()
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	if s.cache != nil {
+		s.cache.set(key, version, body)
+	}
+	return body, nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	writeJSONBytes(w, status, body)
+}
+
+func writeJSONBytes(w http.ResponseWriter, status int, body []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+	if len(body) == 0 {
+		body = []byte("null")
+	}
+	_, _ = w.Write(append(append([]byte(nil), body...), '\n'))
 }
 
 func withCORS(next http.Handler) http.Handler {
@@ -208,4 +285,23 @@ func withCORS(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (c *responseCache) get(key, version string) ([]byte, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, ok := c.entries[key]
+	if !ok || entry.version != version {
+		return nil, false
+	}
+	return append([]byte(nil), entry.body...), true
+}
+
+func (c *responseCache) set(key, version string, body []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = cachedResponse{
+		version: version,
+		body:    append([]byte(nil), body...),
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"llmsnare/internal/benchmark"
@@ -54,6 +55,17 @@ func (s *Store) LoadProfile(profile string, limit int) ([]benchmark.Result, erro
 	return loadJSONL(path, limit)
 }
 
+func (s *Store) ProfileVersion(profile string) (string, error) {
+	info, err := os.Stat(filepath.Join(s.dir, profile+".jsonl"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "missing", nil
+		}
+		return "", fmt.Errorf("stat timeline file: %w", err)
+	}
+	return fileVersion(info), nil
+}
+
 func (s *Store) LoadAll(limit int) (map[string][]benchmark.Result, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -84,6 +96,45 @@ func (s *Store) LoadAll(limit int) (map[string][]benchmark.Result, error) {
 	return result, nil
 }
 
+func (s *Store) AllVersion() (string, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "missing", nil
+		}
+		return "", fmt.Errorf("read timeline dir: %w", err)
+	}
+
+	names := make([]string, 0, len(entries))
+	meta := make(map[string]os.FileInfo, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".jsonl" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return "", fmt.Errorf("stat timeline entry: %w", err)
+		}
+		names = append(names, entry.Name())
+		meta[entry.Name()] = info
+	}
+	sort.Strings(names)
+
+	var b strings.Builder
+	for _, name := range names {
+		if b.Len() > 0 {
+			b.WriteByte('|')
+		}
+		b.WriteString(name)
+		b.WriteByte(':')
+		b.WriteString(fileVersion(meta[name]))
+	}
+	if b.Len() == 0 {
+		return "empty", nil
+	}
+	return b.String(), nil
+}
+
 func loadJSONL(path string, limit int) ([]benchmark.Result, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -111,4 +162,8 @@ func loadJSONL(path string, limit int) ([]benchmark.Result, error) {
 		results = results[len(results)-limit:]
 	}
 	return results, nil
+}
+
+func fileVersion(info os.FileInfo) string {
+	return strconv.FormatInt(info.ModTime().UnixNano(), 10) + ":" + strconv.FormatInt(info.Size(), 10)
 }

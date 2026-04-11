@@ -51,9 +51,10 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 		t.Fatalf("Append returned error: %v", err)
 	}
 
+	server := NewServer(store)
 	req := httptest.NewRequest(http.MethodGet, "/v1/timelines/demo", nil)
 	rec := httptest.NewRecorder()
-	NewServer(store).routes().ServeHTTP(rec, req)
+	server.routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -95,6 +96,9 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, "*")
+	}
+	if got := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries)); got == "" {
+		t.Fatal("expected profile response to be cached")
 	}
 }
 
@@ -180,4 +184,92 @@ func TestParseLimitRejectsNegativeValues(t *testing.T) {
 	if _, err := parseLimit(req); err == nil {
 		t.Fatal("expected parseLimit to reject negative limit")
 	}
+}
+
+func TestTimelineProfileCacheRefreshesAfterAppend(t *testing.T) {
+	store := storage.New(t.TempDir())
+	server := NewServer(store)
+
+	appendTimelineResult(t, store, benchmark.Result{
+		Timestamp:       time.Unix(1, 0).UTC(),
+		FinishedAt:      time.Unix(2, 0).UTC(),
+		CaseID:          "sample_case",
+		Profile:         "demo",
+		Provider:        "openai",
+		Model:           "gpt-4o",
+		Success:         true,
+		TotalScore:      1,
+		RawScore:        1,
+		MaxScore:        10,
+		NormalizedScore: 10,
+	})
+
+	first := decodeTimelineProfileResponse(t, server, "/v1/timelines/demo")
+	if len(first["entries"].([]any)) != 1 {
+		t.Fatalf("first entries len = %d, want 1", len(first["entries"].([]any)))
+	}
+	firstVersion := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries))
+	if firstVersion == "" {
+		t.Fatal("expected first response to populate cache")
+	}
+
+	appendTimelineResult(t, store, benchmark.Result{
+		Timestamp:       time.Unix(3, 0).UTC(),
+		FinishedAt:      time.Unix(4, 0).UTC(),
+		CaseID:          "sample_case",
+		Profile:         "demo",
+		Provider:        "openai",
+		Model:           "gpt-4o",
+		Success:         true,
+		TotalScore:      2,
+		RawScore:        2,
+		MaxScore:        10,
+		NormalizedScore: 20,
+	})
+
+	second := decodeTimelineProfileResponse(t, server, "/v1/timelines/demo")
+	entries, ok := second["entries"].([]any)
+	if !ok {
+		t.Fatalf("entries = %#v, want array", second["entries"])
+	}
+	if len(entries) != 2 {
+		t.Fatalf("second entries len = %d, want 2", len(entries))
+	}
+	secondVersion := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries))
+	if secondVersion == "" || secondVersion == firstVersion {
+		t.Fatalf("cache version = %q, want refresh from %q", secondVersion, firstVersion)
+	}
+}
+
+func appendTimelineResult(t *testing.T, store *storage.Store, result benchmark.Result) {
+	t.Helper()
+	if err := store.Append(result); err != nil {
+		t.Fatalf("Append returned error: %v", err)
+	}
+}
+
+func decodeTimelineProfileResponse(t *testing.T, server *Server, target string) map[string]any {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	rec := httptest.NewRecorder()
+	server.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return payload
+}
+
+func cachedResponseVersion(t *testing.T, server *Server, key string) string {
+	t.Helper()
+	server.cache.mu.RLock()
+	defer server.cache.mu.RUnlock()
+	entry, ok := server.cache.entries[key]
+	if !ok {
+		return ""
+	}
+	return entry.version
 }
