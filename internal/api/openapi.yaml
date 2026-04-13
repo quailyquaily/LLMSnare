@@ -76,9 +76,7 @@ paths:
                   profiles:
                     type: object
                     additionalProperties:
-                      type: array
-                      items:
-                        $ref: "#/components/schemas/BenchmarkResult"
+                      $ref: "#/components/schemas/TimelineProfileGroup"
                 required: [profiles]
   /v1/timelines/{profile}:
     get:
@@ -131,14 +129,22 @@ paths:
                 properties:
                   profile:
                     type: string
+                  provider:
+                    type: string
+                  model:
+                    type: string
+                  model_vendor:
+                    type: string
+                  inference_provider:
+                    type: string
                   entries:
                     type: array
                     items:
-                      $ref: "#/components/schemas/BenchmarkResult"
-                required: [profile, entries]
+                      $ref: "#/components/schemas/TimelineEntry"
+                required: [profile, provider, model, model_vendor, inference_provider, entries]
 components:
   schemas:
-    BenchmarkResult:
+    TimelineEntry:
       type: object
       properties:
         run_id:
@@ -152,14 +158,6 @@ components:
         case_id:
           type: string
         profile:
-          type: string
-        provider:
-          type: string
-        model:
-          type: string
-        model_vendor:
-          type: string
-        inference_provider:
           type: string
         success:
           type: boolean
@@ -186,16 +184,33 @@ components:
         - finished_at
         - case_id
         - profile
-        - provider
-        - model
-        - model_vendor
-        - inference_provider
         - success
         - total_score
         - raw_score
         - max_score
         - normalized_score
         - metrics
+    TimelineProfileGroup:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        model_vendor:
+          type: string
+        inference_provider:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineEntry"
+      required:
+        - provider
+        - model
+        - model_vendor
+        - inference_provider
+        - entries
     Metrics:
       type: object
       properties:

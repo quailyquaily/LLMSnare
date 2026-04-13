@@ -77,16 +77,27 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 	if !ok {
 		t.Fatalf("entry = %#v, want object", entries[0])
 	}
+	if got := payload["provider"]; got != "openai" {
+		t.Fatalf("provider = %#v, want %q", got, "openai")
+	}
+	if got := payload["model"]; got != "gpt-4o" {
+		t.Fatalf("model = %#v, want %q", got, "gpt-4o")
+	}
+	if got := payload["model_vendor"]; got != "openai" {
+		t.Fatalf("model_vendor = %#v, want %q", got, "openai")
+	}
+	if got := payload["inference_provider"]; got != "cloudflare" {
+		t.Fatalf("inference_provider = %#v, want %q", got, "cloudflare")
+	}
 	for _, forbidden := range []string{"endpoint", "error", "final_writes", "final_response"} {
 		if _, ok := entry[forbidden]; ok {
 			t.Fatalf("entry unexpectedly contains %q", forbidden)
 		}
 	}
-	if got := entry["model_vendor"]; got != "openai" {
-		t.Fatalf("model_vendor = %#v, want %q", got, "openai")
-	}
-	if got := entry["inference_provider"]; got != "cloudflare" {
-		t.Fatalf("inference_provider = %#v, want %q", got, "cloudflare")
+	for _, forbidden := range []string{"provider", "model", "model_vendor", "inference_provider"} {
+		if _, ok := entry[forbidden]; ok {
+			t.Fatalf("entry unexpectedly contains %q", forbidden)
+		}
 	}
 	rawRunID, ok := entry["run_id"].(string)
 	if !ok || rawRunID == "" {
@@ -318,6 +329,35 @@ func TestTimelinesSupportsQueryFilters(t *testing.T) {
 	}
 	if len(profiles) != 1 {
 		t.Fatalf("len(profiles) = %d, want 1", len(profiles))
+	}
+	betaProfile, ok := profiles["beta"].(map[string]any)
+	if !ok {
+		t.Fatalf("profiles[beta] = %#v, want object", profiles["beta"])
+	}
+	if got := betaProfile["provider"]; got != "openai" {
+		t.Fatalf("provider = %#v, want %q", got, "openai")
+	}
+	if got := betaProfile["model"]; got != "gpt-4o-mini" {
+		t.Fatalf("model = %#v, want %q", got, "gpt-4o-mini")
+	}
+	if got := betaProfile["model_vendor"]; got != "openai" {
+		t.Fatalf("model_vendor = %#v, want %q", got, "openai")
+	}
+	if got := betaProfile["inference_provider"]; got != "cloudflare" {
+		t.Fatalf("inference_provider = %#v, want %q", got, "cloudflare")
+	}
+	groupEntries, ok := betaProfile["entries"].([]any)
+	if !ok || len(groupEntries) != 1 {
+		t.Fatalf("entries = %#v, want single entry", betaProfile["entries"])
+	}
+	groupEntry, ok := groupEntries[0].(map[string]any)
+	if !ok {
+		t.Fatalf("entry = %#v, want object", groupEntries[0])
+	}
+	for _, forbidden := range []string{"provider", "model", "model_vendor", "inference_provider"} {
+		if _, ok := groupEntry[forbidden]; ok {
+			t.Fatalf("entry unexpectedly contains %q", forbidden)
+		}
 	}
 	if _, ok := profiles["beta"]; !ok {
 		t.Fatalf("profiles = %#v, want only beta", profiles)
