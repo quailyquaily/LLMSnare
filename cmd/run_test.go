@@ -22,18 +22,20 @@ func TestRenderTextResultUsesReadableSections(t *testing.T) {
 	readWriteRatio := 2.5
 	coverage := 1.0
 	renderTextResult(cmd, benchmark.Result{
-		Timestamp:       time.Unix(0, 0).UTC(),
-		FinishedAt:      time.Unix(2, 250_000_000).UTC(),
-		CaseID:          "read_write_ratio_sample",
-		Profile:         "demo_profile",
-		Provider:        "openai",
-		Model:           "gpt-4o",
-		Endpoint:        "https://api.openai.com/v1",
-		Success:         true,
-		TotalScore:      110,
-		RawScore:        110,
-		MaxScore:        125,
-		NormalizedScore: 88,
+		Timestamp:         time.Unix(0, 0).UTC(),
+		FinishedAt:        time.Unix(2, 250_000_000).UTC(),
+		CaseID:            "read_write_ratio_sample",
+		Profile:           "demo_profile",
+		Provider:          "openai",
+		Model:             "gpt-4o",
+		ModelVendor:       "openai",
+		InferenceProvider: "groq",
+		Endpoint:          "https://api.openai.com/v1",
+		Success:           true,
+		TotalScore:        110,
+		RawScore:          110,
+		MaxScore:          125,
+		NormalizedScore:   88,
 		Metrics: benchmark.Metrics{
 			ReadFileCalls:        2,
 			WriteFileCalls:       1,
@@ -62,8 +64,12 @@ func TestRenderTextResultUsesReadableSections(t *testing.T) {
 		"Bonuses",
 		"Tool calls",
 		"Provider",
+		"Model vendor",
+		"Inference provider",
 		"Endpoint",
 		"https://api.openai.com/v1",
+		"openai",
+		"groq",
 		"88.00%",
 		"110/125",
 		"2.25s",
@@ -82,11 +88,11 @@ func TestRenderTextResultUsesReadableSections(t *testing.T) {
 func TestRenderRunProgressShowsRoundAndCompletion(t *testing.T) {
 	var out bytes.Buffer
 	events := []benchmark.ProgressEvent{
-		{Kind: benchmark.ProgressRunStarted, Profile: "demo_profile", CaseID: "case_v1"},
-		{Kind: benchmark.ProgressRoundStarted, Profile: "demo_profile", Round: 1},
-		{Kind: benchmark.ProgressToolBatch, Profile: "demo_profile", Round: 1, ToolCalls: 2},
-		{Kind: benchmark.ProgressToolExecuted, Profile: "demo_profile", Round: 1, Tool: "read_file", ToolPath: "main.go"},
-		{Kind: benchmark.ProgressRunFinished, Profile: "demo_profile", Success: true, RawScore: 105, MaxScore: 125, NormalizedScore: 84, Elapsed: 1500 * time.Millisecond},
+		{Kind: benchmark.ProgressRunStarted, Profile: "demo_profile", ModelVendor: "google", InferenceProvider: "groq", CaseID: "case_v1"},
+		{Kind: benchmark.ProgressRoundStarted, Profile: "demo_profile", ModelVendor: "google", InferenceProvider: "groq", Round: 1},
+		{Kind: benchmark.ProgressToolBatch, Profile: "demo_profile", ModelVendor: "google", InferenceProvider: "groq", Round: 1, ToolCalls: 2},
+		{Kind: benchmark.ProgressToolExecuted, Profile: "demo_profile", ModelVendor: "google", InferenceProvider: "groq", Round: 1, Tool: "read_file", ToolPath: "main.go"},
+		{Kind: benchmark.ProgressRunFinished, Profile: "demo_profile", ModelVendor: "google", InferenceProvider: "groq", Success: true, RawScore: 105, MaxScore: 125, NormalizedScore: 84, Elapsed: 1500 * time.Millisecond},
 	}
 
 	for _, event := range events {
@@ -95,10 +101,10 @@ func TestRenderRunProgressShowsRoundAndCompletion(t *testing.T) {
 
 	got := out.String()
 	for _, want := range []string{
-		`[1/2] started, profile="demo_profile", case=case_v1`,
-		`[1/2] round 001, profile="demo_profile": received 2 tool calls`,
-		`[1/2] round 001, profile="demo_profile": read_file main.go`,
-		`[1/2] finished, profile="demo_profile", status=PASS, elapsed=1.5s, score=84.00%`,
+		`[1/2] started, profile="demo_profile", model_vendor="google", inference_provider="groq", case=case_v1`,
+		`[1/2] round 001, profile="demo_profile", model_vendor="google", inference_provider="groq": received 2 tool calls`,
+		`[1/2] round 001, profile="demo_profile", model_vendor="google", inference_provider="groq": read_file main.go`,
+		`[1/2] finished, profile="demo_profile", model_vendor="google", inference_provider="groq", status=PASS, elapsed=1.5s, score=84.00%`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("progress output missing %q:\n%s", want, got)
@@ -247,16 +253,18 @@ func TestPersistResultsAppendsTimelineEntries(t *testing.T) {
 	dir := t.TempDir()
 	results := []benchmark.Result{
 		{
-			Timestamp:       time.Unix(1, 0).UTC(),
-			FinishedAt:      time.Unix(2, 0).UTC(),
-			Profile:         "demo",
-			Provider:        "openai",
-			Model:           "gpt-4o",
-			Endpoint:        "https://api.openai.com/v1",
-			Success:         true,
-			RawScore:        90,
-			MaxScore:        100,
-			NormalizedScore: 90,
+			Timestamp:         time.Unix(1, 0).UTC(),
+			FinishedAt:        time.Unix(2, 0).UTC(),
+			Profile:           "demo",
+			Provider:          "openai",
+			Model:             "gpt-4o",
+			ModelVendor:       "openai",
+			InferenceProvider: "cloudflare",
+			Endpoint:          "https://api.openai.com/v1",
+			Success:           true,
+			RawScore:          90,
+			MaxScore:          100,
+			NormalizedScore:   90,
 		},
 	}
 
@@ -273,5 +281,11 @@ func TestPersistResultsAppendsTimelineEntries(t *testing.T) {
 	}
 	if got := loaded[0].NormalizedScore; got != 90 {
 		t.Fatalf("normalized score = %v, want 90", got)
+	}
+	if got := loaded[0].ModelVendor; got != "openai" {
+		t.Fatalf("model_vendor = %q, want %q", got, "openai")
+	}
+	if got := loaded[0].InferenceProvider; got != "cloudflare" {
+		t.Fatalf("inference_provider = %q, want %q", got, "cloudflare")
 	}
 }

@@ -10,16 +10,18 @@ import (
 func TestAppendAndLoadProfile(t *testing.T) {
 	store := New(t.TempDir())
 	result := benchmark.Result{
-		Timestamp:       time.Unix(1, 0).UTC(),
-		FinishedAt:      time.Unix(2, 0).UTC(),
-		Profile:         "demo",
-		Provider:        "openai",
-		Model:           "gpt-4o",
-		Success:         true,
-		TotalScore:      110,
-		RawScore:        110,
-		MaxScore:        125,
-		NormalizedScore: 88,
+		Timestamp:         time.Unix(1, 0).UTC(),
+		FinishedAt:        time.Unix(2, 0).UTC(),
+		Profile:           "demo",
+		Provider:          "openai",
+		Model:             "gpt-4o",
+		ModelVendor:       "openai",
+		InferenceProvider: "cloudflare",
+		Success:           true,
+		TotalScore:        110,
+		RawScore:          110,
+		MaxScore:          125,
+		NormalizedScore:   88,
 	}
 
 	if err := store.Append(result); err != nil {
@@ -38,5 +40,11 @@ func TestAppendAndLoadProfile(t *testing.T) {
 	}
 	if loaded[0].NormalizedScore != 88 {
 		t.Fatalf("loaded normalized score = %v, want 88", loaded[0].NormalizedScore)
+	}
+	if loaded[0].ModelVendor != "openai" {
+		t.Fatalf("loaded model_vendor = %q, want %q", loaded[0].ModelVendor, "openai")
+	}
+	if loaded[0].InferenceProvider != "cloudflare" {
+		t.Fatalf("loaded inference_provider = %q, want %q", loaded[0].InferenceProvider, "cloudflare")
 	}
 }

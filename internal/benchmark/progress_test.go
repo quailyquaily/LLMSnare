@@ -100,7 +100,7 @@ func TestRunWithClientReportsProgress(t *testing.T) {
 		context.Background(),
 		caseDef,
 		"demo_profile",
-		config.Profile{Provider: "openai", Model: "gpt-4o"},
+		config.Profile{Provider: "openai", Model: "gpt-4o", ModelVendor: "openai", InferenceProvider: "groq"},
 		client,
 	)
 	if err != nil {
@@ -138,11 +138,17 @@ func TestRunWithClientReportsProgress(t *testing.T) {
 	if !events[len(events)-1].Success {
 		t.Fatal("expected final progress event to report success")
 	}
+	if events[0].ModelVendor != "openai" || events[0].InferenceProvider != "groq" {
+		t.Fatalf("start event metadata = %#v, want model_vendor=openai inference_provider=groq", events[0])
+	}
 	if events[len(events)-1].RawScore != result.RawScore {
 		t.Fatalf("final raw score = %d, want %d", events[len(events)-1].RawScore, result.RawScore)
 	}
 	if events[len(events)-1].NormalizedScore != result.NormalizedScore {
 		t.Fatalf("final normalized score = %v, want %v", events[len(events)-1].NormalizedScore, result.NormalizedScore)
+	}
+	if result.ModelVendor != "openai" || result.InferenceProvider != "groq" {
+		t.Fatalf("result metadata = %#v, want model_vendor=openai inference_provider=groq", result)
 	}
 }
 

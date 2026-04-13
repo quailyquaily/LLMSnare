@@ -265,7 +265,7 @@ func renderTextResult(cmd *cobra.Command, result benchmark.Result) {
 	fmt.Fprintf(out, "%s\n", style.header(fmt.Sprintf("Profile: %s", result.Profile)))
 	fmt.Fprintf(out, "%s\n", style.dim(strings.Repeat("-", 72)))
 
-	renderKVSection(out, style, "Summary", [][2]string{
+	rows := [][2]string{
 		{"Case", result.CaseID},
 		{"Status", style.status(formatStatus(result.Success), result.Success)},
 		{"Score", style.score(formatPercent(result.NormalizedScore), result.NormalizedScore)},
@@ -273,9 +273,14 @@ func renderTextResult(cmd *cobra.Command, result benchmark.Result) {
 		{"Duration", formatDuration(result.FinishedAt.Sub(result.Timestamp))},
 		{"Provider", result.Provider},
 		{"Model", result.Model},
-		{"Endpoint", result.Endpoint},
-		{"Tool calls", fmt.Sprintf("%d", len(result.ToolCalls))},
-	})
+	}
+	rows = appendOptionalRow(rows, "Model vendor", result.ModelVendor)
+	rows = appendOptionalRow(rows, "Inference provider", result.InferenceProvider)
+	rows = append(rows,
+		[2]string{"Endpoint", result.Endpoint},
+		[2]string{"Tool calls", fmt.Sprintf("%d", len(result.ToolCalls))},
+	)
+	renderKVSection(out, style, "Summary", rows)
 
 	if result.Error != "" {
 		renderKVSection(out, style, "Error", [][2]string{
@@ -298,7 +303,7 @@ func renderTextResult(cmd *cobra.Command, result benchmark.Result) {
 func renderRunProgress(out io.Writer, index, total int, event benchmark.ProgressEvent) {
 	style := newANSIStyle(out)
 	prefix := style.progressPrefix(fmt.Sprintf("[%d/%d]", index, total))
-	profileLabel := fmt.Sprintf("profile=%q", event.Profile)
+	profileLabel := progressMetadata(event)
 
 	switch event.Kind {
 	case benchmark.ProgressRunStarted:
@@ -323,6 +328,24 @@ func renderRunProgress(out io.Writer, index, total int, event benchmark.Progress
 		}
 		fmt.Fprintf(out, "%s %s, %s, status=%s, elapsed=%s, score=%s\n", prefix, style.header("finished"), profileLabel, status, formatDuration(event.Elapsed), score)
 	}
+}
+
+func appendOptionalRow(rows [][2]string, key, value string) [][2]string {
+	if strings.TrimSpace(value) == "" {
+		return rows
+	}
+	return append(rows, [2]string{key, value})
+}
+
+func progressMetadata(event benchmark.ProgressEvent) string {
+	parts := []string{fmt.Sprintf("profile=%q", event.Profile)}
+	if strings.TrimSpace(event.ModelVendor) != "" {
+		parts = append(parts, fmt.Sprintf("model_vendor=%q", event.ModelVendor))
+	}
+	if strings.TrimSpace(event.InferenceProvider) != "" {
+		parts = append(parts, fmt.Sprintf("inference_provider=%q", event.InferenceProvider))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func renderKVSection(out io.Writer, style ansiStyle, title string, rows [][2]string) {

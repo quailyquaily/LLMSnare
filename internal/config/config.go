@@ -43,15 +43,17 @@ type StorageConfig struct {
 }
 
 type Profile struct {
-	Provider        string        `yaml:"provider"`
-	Model           string        `yaml:"model"`
-	Endpoint        string        `yaml:"endpoint"`
-	APIKey          string        `yaml:"api_key"`
-	AccountID       string        `yaml:"account_id"`
-	APIToken        string        `yaml:"api_token"`
-	Timeout         time.Duration `yaml:"-"`
-	Temperature     *float64      `yaml:"temperature"`
-	MaxOutputTokens int           `yaml:"max_output_tokens"`
+	Provider          string        `yaml:"provider"`
+	Model             string        `yaml:"model"`
+	ModelVendor       string        `yaml:"model_vendor"`
+	InferenceProvider string        `yaml:"inference_provider"`
+	Endpoint          string        `yaml:"endpoint"`
+	APIKey            string        `yaml:"api_key"`
+	AccountID         string        `yaml:"account_id"`
+	APIToken          string        `yaml:"api_token"`
+	Timeout           time.Duration `yaml:"-"`
+	Temperature       *float64      `yaml:"temperature"`
+	MaxOutputTokens   int           `yaml:"max_output_tokens"`
 
 	TimeoutRaw string `yaml:"timeout"`
 }
@@ -136,12 +138,15 @@ func (c *Config) normalize(baseDir string) error {
 
 func (p *Profile) normalize() error {
 	p.Provider = strings.TrimSpace(p.Provider)
+	p.Model = strings.TrimSpace(p.Model)
+	p.ModelVendor = strings.TrimSpace(p.ModelVendor)
+	p.InferenceProvider = strings.TrimSpace(p.InferenceProvider)
 	switch p.Provider {
 	case "openai", "openai_resp", "anthropic", "gemini", "cloudflare":
 	default:
 		return fmt.Errorf("provider must be one of openai, openai_resp, anthropic, gemini, cloudflare")
 	}
-	if strings.TrimSpace(p.Model) == "" {
+	if p.Model == "" {
 		return fmt.Errorf("model is required")
 	}
 	p.Endpoint = strings.TrimSpace(p.Endpoint)

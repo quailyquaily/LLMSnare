@@ -137,6 +137,8 @@ profiles:
   openai_gpt4o:
     provider: openai
     model: "gpt-4o"
+    model_vendor: "openai"
+    inference_provider: "openai"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
     max_output_tokens: 4096
@@ -152,6 +154,9 @@ Notes:
 - `run --persist` appends JSONL entries under `storage.timeline_dir`
 - use Linux `cron` to schedule repeated runs; see [linux_cron_examples.md](./docs/linux_cron_examples.md)
 - supported providers are `openai`, `openai_resp`, `anthropic`, `gemini`, and `cloudflare`
+- `provider` is the API integration type; `model_vendor` and `inference_provider` are optional metadata
+- `model_vendor` names the organization that publishes the model
+- `inference_provider` names the service that actually hosts and serves the model
 - `api_key` supports `${ENV_NAME}` expansion
 - `endpoint` is optional; if omitted, a provider-specific default is used
 - `openai_resp` uses the native OpenAI Responses API and currently requires the default OpenAI base URL
@@ -175,6 +180,8 @@ profiles:
   cf_llama:
     provider: cloudflare
     model: "@cf/meta/llama-3.1-8b-instruct"
+    model_vendor: "meta"
+    inference_provider: "cloudflare"
     account_id: "${CLOUDFLARE_ACCOUNT_ID}"
     api_token: "${CLOUDFLARE_API_TOKEN}"
     timeout: 300s
@@ -235,7 +242,7 @@ Response shapes:
 
 Each `BenchmarkResult` includes:
 
-- run metadata: `timestamp`, `finished_at`, `case_id`, `profile`, `provider`, `model`, `success`
+- run metadata: `timestamp`, `finished_at`, `case_id`, `profile`, `provider`, `model`, `model_vendor`, `inference_provider`, `success`
 - scores: `total_score`, `raw_score`, `max_score`, `normalized_score`
 - automatic metrics: `read_file_calls`, `write_file_calls`, `list_dir_calls`, `read_write_ratio`, `pre_write_read_coverage`
 - scoring details: `deductions`, `bonuses`

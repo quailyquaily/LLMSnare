@@ -157,6 +157,8 @@ llmsnare init
 - 一组 LLM profile
 - 每个 profile 的模型名称
 - 每个 profile 的 provider
+- 每个 profile 的模型出品方
+- 每个 profile 的模型托管方
 - 每个 profile 的 API endpoint 覆盖配置
 - 每个 profile 的 API key
 
@@ -177,6 +179,8 @@ profiles:
   openai_gpt4o:
     provider: openai
     model: "gpt-4o"
+    model_vendor: "openai"
+    inference_provider: "openai"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
     max_output_tokens: 4096
@@ -184,6 +188,8 @@ profiles:
   claude_sonnet:
     provider: anthropic
     model: "claude-3-5-sonnet-latest"
+    model_vendor: "anthropic"
+    inference_provider: "anthropic"
     api_key: "${ANTHROPIC_API_KEY}"
     timeout: 300s
     max_output_tokens: 4096
@@ -191,6 +197,8 @@ profiles:
   cf_llama:
     provider: cloudflare
     model: "@cf/meta/llama-3.1-8b-instruct"
+    model_vendor: "meta"
+    inference_provider: "cloudflare"
     account_id: "${CLOUDFLARE_ACCOUNT_ID}"
     api_token: "${CLOUDFLARE_API_TOKEN}"
     timeout: 300s
@@ -226,8 +234,10 @@ profiles:
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `provider` | string | 是 | 无 | 模型供应商。v1 支持 `openai`、`openai_resp`、`anthropic`、`gemini`、`cloudflare`。 |
+| `provider` | string | 是 | 无 | API 接入类型。v1 支持 `openai`、`openai_resp`、`anthropic`、`gemini`、`cloudflare`。 |
 | `model` | string | 是 | 无 | 目标模型名。 |
+| `model_vendor` | string | 否 | 空字符串 | 模型出品方，例如 `google`、`openai`、`meta`。 |
+| `inference_provider` | string | 否 | 空字符串 | 实际托管并提供推理服务的一方，例如 `google`、`cloudflare`、`groq`。 |
 | `endpoint` | string | 否 | provider-specific default | API 基地址覆盖值。 |
 | `api_key` | string | 条件必填 | 无 | `openai`、`openai_resp`、`anthropic`、`gemini` 使用的 API key，支持 `${ENV_NAME}`。 |
 | `account_id` | string | 条件必填 | 无 | `cloudflare` 使用的 Account ID，支持 `${ENV_NAME}`。 |
@@ -246,7 +256,8 @@ profiles:
 
 - `profiles` 的 key 必须唯一，且要能直接作为 `llmsnare run <profile_name>` 的 `<profile_name>`。
 - 当 `llmsnare run` 不带参数时，系统运行全部 profile；执行顺序按 profile 名称字典序稳定排序。
-- `provider` 表示供应商，不再使用 `driver` 这个名字。
+- `provider` 表示 API 接入类型，不等于模型出品方或模型托管方，不再使用 `driver` 这个名字。
+- `model_vendor` 和 `inference_provider` 只是 profile 元数据，不参与客户端选择和请求路由。
 - `endpoint` 是 provider-specific base URL 覆盖值；省略时使用默认值。
 - `openai_resp` 走 OpenAI Responses API，只支持官方默认基地址，不支持自定义兼容端点。
 - `cloudflare` 需要 `account_id` 和 `api_token`，不使用 `api_key`。

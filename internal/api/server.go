@@ -27,20 +27,22 @@ type Server struct {
 }
 
 type timelineEntry struct {
-	Timestamp       time.Time                   `json:"timestamp"`
-	FinishedAt      time.Time                   `json:"finished_at"`
-	CaseID          string                      `json:"case_id"`
-	Profile         string                      `json:"profile"`
-	Provider        string                      `json:"provider"`
-	Model           string                      `json:"model"`
-	Success         bool                        `json:"success"`
-	TotalScore      int                         `json:"total_score"`
-	RawScore        int                         `json:"raw_score"`
-	MaxScore        int                         `json:"max_score"`
-	NormalizedScore float64                     `json:"normalized_score"`
-	Metrics         benchmark.Metrics           `json:"metrics"`
-	Deductions      []benchmark.ScoreAdjustment `json:"deductions,omitempty"`
-	Bonuses         []timelineBonus             `json:"bonuses,omitempty"`
+	Timestamp         time.Time                   `json:"timestamp"`
+	FinishedAt        time.Time                   `json:"finished_at"`
+	CaseID            string                      `json:"case_id"`
+	Profile           string                      `json:"profile"`
+	Provider          string                      `json:"provider"`
+	Model             string                      `json:"model"`
+	ModelVendor       string                      `json:"model_vendor"`
+	InferenceProvider string                      `json:"inference_provider"`
+	Success           bool                        `json:"success"`
+	TotalScore        int                         `json:"total_score"`
+	RawScore          int                         `json:"raw_score"`
+	MaxScore          int                         `json:"max_score"`
+	NormalizedScore   float64                     `json:"normalized_score"`
+	Metrics           benchmark.Metrics           `json:"metrics"`
+	Deductions        []benchmark.ScoreAdjustment `json:"deductions,omitempty"`
+	Bonuses           []timelineBonus             `json:"bonuses,omitempty"`
 }
 
 type timelineBonus struct {
@@ -181,20 +183,22 @@ func projectTimelineEntries(entries []benchmark.Result) []timelineEntry {
 
 func projectTimelineEntry(entry benchmark.Result) timelineEntry {
 	return timelineEntry{
-		Timestamp:       entry.Timestamp,
-		FinishedAt:      entry.FinishedAt,
-		CaseID:          entry.CaseID,
-		Profile:         entry.Profile,
-		Provider:        entry.Provider,
-		Model:           entry.Model,
-		Success:         entry.Success,
-		TotalScore:      entry.TotalScore,
-		RawScore:        entry.RawScore,
-		MaxScore:        entry.MaxScore,
-		NormalizedScore: entry.NormalizedScore,
-		Metrics:         entry.Metrics,
-		Deductions:      entry.Deductions,
-		Bonuses:         projectTimelineBonuses(entry.Bonuses),
+		Timestamp:         entry.Timestamp,
+		FinishedAt:        entry.FinishedAt,
+		CaseID:            entry.CaseID,
+		Profile:           entry.Profile,
+		Provider:          entry.Provider,
+		Model:             entry.Model,
+		ModelVendor:       entry.ModelVendor,
+		InferenceProvider: entry.InferenceProvider,
+		Success:           entry.Success,
+		TotalScore:        entry.TotalScore,
+		RawScore:          entry.RawScore,
+		MaxScore:          entry.MaxScore,
+		NormalizedScore:   entry.NormalizedScore,
+		Metrics:           entry.Metrics,
+		Deductions:        entry.Deductions,
+		Bonuses:           projectTimelineBonuses(entry.Bonuses),
 	}
 }
 

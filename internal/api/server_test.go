@@ -15,19 +15,21 @@ import (
 func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 	store := storage.New(t.TempDir())
 	result := benchmark.Result{
-		Timestamp:       time.Unix(1, 0).UTC(),
-		FinishedAt:      time.Unix(2, 0).UTC(),
-		CaseID:          "sample_case",
-		Profile:         "demo",
-		Provider:        "openai",
-		Model:           "gpt-4o",
-		Endpoint:        "https://api.openai.com/v1",
-		Success:         false,
-		Error:           `gemini provider model "gemini-3.1-pro-preview": upstream detail`,
-		TotalScore:      90,
-		RawScore:        90,
-		MaxScore:        100,
-		NormalizedScore: 90,
+		Timestamp:         time.Unix(1, 0).UTC(),
+		FinishedAt:        time.Unix(2, 0).UTC(),
+		CaseID:            "sample_case",
+		Profile:           "demo",
+		Provider:          "openai",
+		Model:             "gpt-4o",
+		ModelVendor:       "openai",
+		InferenceProvider: "cloudflare",
+		Endpoint:          "https://api.openai.com/v1",
+		Success:           false,
+		Error:             `gemini provider model "gemini-3.1-pro-preview": upstream detail`,
+		TotalScore:        90,
+		RawScore:          90,
+		MaxScore:          100,
+		NormalizedScore:   90,
 		Deductions: []benchmark.ScoreAdjustment{
 			{Name: "S1", Points: -10, Description: "missing read"},
 		},
@@ -77,6 +79,12 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 		if _, ok := entry[forbidden]; ok {
 			t.Fatalf("entry unexpectedly contains %q", forbidden)
 		}
+	}
+	if got := entry["model_vendor"]; got != "openai" {
+		t.Fatalf("model_vendor = %#v, want %q", got, "openai")
+	}
+	if got := entry["inference_provider"]; got != "cloudflare" {
+		t.Fatalf("inference_provider = %#v, want %q", got, "cloudflare")
 	}
 
 	bonuses, ok := entry["bonuses"].([]any)

@@ -44,20 +44,22 @@ const (
 )
 
 type ProgressEvent struct {
-	Kind            ProgressEventKind
-	CaseID          string
-	Profile         string
-	Round           int
-	MaxRounds       int
-	Tool            string
-	ToolPath        string
-	ToolCalls       int
-	Elapsed         time.Duration
-	RawScore        int
-	MaxScore        int
-	NormalizedScore float64
-	Success         bool
-	Error           string
+	Kind              ProgressEventKind
+	CaseID            string
+	Profile           string
+	ModelVendor       string
+	InferenceProvider string
+	Round             int
+	MaxRounds         int
+	Tool              string
+	ToolPath          string
+	ToolCalls         int
+	Elapsed           time.Duration
+	RawScore          int
+	MaxScore          int
+	NormalizedScore   float64
+	Success           bool
+	Error             string
 }
 
 type ProgressReporter func(ProgressEvent)
@@ -90,26 +92,37 @@ func (r *Runner) report(event ProgressEvent) {
 	}
 }
 
+func progressEventBase(caseID, profileName string, profile config.Profile) ProgressEvent {
+	return ProgressEvent{
+		CaseID:            caseID,
+		Profile:           profileName,
+		ModelVendor:       profile.ModelVendor,
+		InferenceProvider: profile.InferenceProvider,
+	}
+}
+
 type Result struct {
-	Timestamp       time.Time         `json:"timestamp"`
-	FinishedAt      time.Time         `json:"finished_at"`
-	CaseID          string            `json:"case_id"`
-	Profile         string            `json:"profile"`
-	Provider        string            `json:"provider"`
-	Model           string            `json:"model"`
-	Endpoint        string            `json:"endpoint"`
-	Success         bool              `json:"success"`
-	Error           string            `json:"error,omitempty"`
-	TotalScore      int               `json:"total_score"`
-	RawScore        int               `json:"raw_score"`
-	MaxScore        int               `json:"max_score"`
-	NormalizedScore float64           `json:"normalized_score"`
-	Metrics         Metrics           `json:"metrics"`
-	Deductions      []ScoreAdjustment `json:"deductions,omitempty"`
-	Bonuses         []ScoreAdjustment `json:"bonuses,omitempty"`
-	ToolCalls       []ToolCallLog     `json:"tool_calls"`
-	FinalWrites     map[string]string `json:"final_writes,omitempty"`
-	FinalResponse   string            `json:"final_response,omitempty"`
+	Timestamp         time.Time         `json:"timestamp"`
+	FinishedAt        time.Time         `json:"finished_at"`
+	CaseID            string            `json:"case_id"`
+	Profile           string            `json:"profile"`
+	Provider          string            `json:"provider"`
+	Model             string            `json:"model"`
+	ModelVendor       string            `json:"model_vendor"`
+	InferenceProvider string            `json:"inference_provider"`
+	Endpoint          string            `json:"endpoint"`
+	Success           bool              `json:"success"`
+	Error             string            `json:"error,omitempty"`
+	TotalScore        int               `json:"total_score"`
+	RawScore          int               `json:"raw_score"`
+	MaxScore          int               `json:"max_score"`
+	NormalizedScore   float64           `json:"normalized_score"`
+	Metrics           Metrics           `json:"metrics"`
+	Deductions        []ScoreAdjustment `json:"deductions,omitempty"`
+	Bonuses           []ScoreAdjustment `json:"bonuses,omitempty"`
+	ToolCalls         []ToolCallLog     `json:"tool_calls"`
+	FinalWrites       map[string]string `json:"final_writes,omitempty"`
+	FinalResponse     string            `json:"final_response,omitempty"`
 }
 
 type Metrics struct {
@@ -145,12 +158,10 @@ func (r *Runner) Run(ctx context.Context, caseDef benchcase.Case, profileName st
 	client, err := newClient(profile)
 	if err != nil {
 		result := failureResult(caseDef.ID, profileName, profile, err)
-		r.report(ProgressEvent{
-			Kind:    ProgressRunFinished,
-			CaseID:  caseDef.ID,
-			Profile: profileName,
-			Error:   err.Error(),
-		})
+		event := progressEventBase(caseDef.ID, profileName, profile)
+		event.Kind = ProgressRunFinished
+		event.Error = err.Error()
+		r.report(event)
 		return result, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, profile.Timeout)
@@ -165,32 +176,30 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 	tools := buildTools()
 
 	result := Result{
-		Timestamp: startedAt,
-		CaseID:    caseDef.ID,
-		Profile:   profileName,
-		Provider:  profile.Provider,
-		Model:     profile.Model,
-		Endpoint:  profile.Endpoint,
+		Timestamp:         startedAt,
+		CaseID:            caseDef.ID,
+		Profile:           profileName,
+		Provider:          profile.Provider,
+		Model:             profile.Model,
+		ModelVendor:       profile.ModelVendor,
+		InferenceProvider: profile.InferenceProvider,
+		Endpoint:          profile.Endpoint,
 	}
 
-	r.report(ProgressEvent{
-		Kind:      ProgressRunStarted,
-		CaseID:    caseDef.ID,
-		Profile:   profileName,
-		MaxRounds: maxRounds,
-	})
+	event := progressEventBase(caseDef.ID, profileName, profile)
+	event.Kind = ProgressRunStarted
+	event.MaxRounds = maxRounds
+	r.report(event)
 
 	var finalText string
 	var runErr error
 	for round := 0; round < maxRounds; round++ {
 		roundNumber := round + 1
-		r.report(ProgressEvent{
-			Kind:      ProgressRoundStarted,
-			CaseID:    caseDef.ID,
-			Profile:   profileName,
-			Round:     roundNumber,
-			MaxRounds: maxRounds,
-		})
+		event := progressEventBase(caseDef.ID, profileName, profile)
+		event.Kind = ProgressRoundStarted
+		event.Round = roundNumber
+		event.MaxRounds = maxRounds
+		r.report(event)
 
 		opts := []uniai.ChatOption{
 			uniai.WithProvider(profile.Provider),
@@ -215,14 +224,12 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 			break
 		}
 
-		r.report(ProgressEvent{
-			Kind:      ProgressToolBatch,
-			CaseID:    caseDef.ID,
-			Profile:   profileName,
-			Round:     roundNumber,
-			MaxRounds: maxRounds,
-			ToolCalls: len(resp.ToolCalls),
-		})
+		event = progressEventBase(caseDef.ID, profileName, profile)
+		event.Kind = ProgressToolBatch
+		event.Round = roundNumber
+		event.MaxRounds = maxRounds
+		event.ToolCalls = len(resp.ToolCalls)
+		r.report(event)
 
 		toolCalls := replayToolCallsForProvider(profile.Provider, resp.ToolCalls)
 		messages = append(messages, assistantToolReplayMessage(resp.Text, toolCalls))
@@ -240,15 +247,12 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 				continue
 			}
 			last := fs.logs[len(fs.logs)-1]
-			event := ProgressEvent{
-				Kind:      ProgressToolExecuted,
-				CaseID:    caseDef.ID,
-				Profile:   profileName,
-				Round:     roundNumber,
-				MaxRounds: maxRounds,
-				Tool:      last.Tool,
-				ToolPath:  stringValue(last.Input["path"]),
-			}
+			event := progressEventBase(caseDef.ID, profileName, profile)
+			event.Kind = ProgressToolExecuted
+			event.Round = roundNumber
+			event.MaxRounds = maxRounds
+			event.Tool = last.Tool
+			event.ToolPath = stringValue(last.Input["path"])
 			if last.IsError {
 				event.Error = fmt.Sprint(last.Result)
 			}
@@ -283,30 +287,26 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 		result.TotalScore = 0
 		result.RawScore = 0
 		result.NormalizedScore = 0
-		r.report(ProgressEvent{
-			Kind:            ProgressRunFinished,
-			CaseID:          caseDef.ID,
-			Profile:         profileName,
-			Elapsed:         result.FinishedAt.Sub(startedAt),
-			RawScore:        result.RawScore,
-			MaxScore:        result.MaxScore,
-			NormalizedScore: result.NormalizedScore,
-			Error:           result.Error,
-		})
+		event := progressEventBase(caseDef.ID, profileName, profile)
+		event.Kind = ProgressRunFinished
+		event.Elapsed = result.FinishedAt.Sub(startedAt)
+		event.RawScore = result.RawScore
+		event.MaxScore = result.MaxScore
+		event.NormalizedScore = result.NormalizedScore
+		event.Error = result.Error
+		r.report(event)
 		return result, nil
 	}
 
 	result.Success = isPassingScore(result.TotalScore)
-	r.report(ProgressEvent{
-		Kind:            ProgressRunFinished,
-		CaseID:          caseDef.ID,
-		Profile:         profileName,
-		Elapsed:         result.FinishedAt.Sub(startedAt),
-		RawScore:        result.RawScore,
-		MaxScore:        result.MaxScore,
-		NormalizedScore: result.NormalizedScore,
-		Success:         result.Success,
-	})
+	event = progressEventBase(caseDef.ID, profileName, profile)
+	event.Kind = ProgressRunFinished
+	event.Elapsed = result.FinishedAt.Sub(startedAt)
+	event.RawScore = result.RawScore
+	event.MaxScore = result.MaxScore
+	event.NormalizedScore = result.NormalizedScore
+	event.Success = result.Success
+	r.report(event)
 	return result, nil
 }
 
@@ -394,19 +394,21 @@ func decodeGeminiThoughtSignatureFromToolCallID(callID string) string {
 func failureResult(caseID, profileName string, profile config.Profile, err error) Result {
 	now := time.Now().UTC()
 	return Result{
-		Timestamp:       now,
-		FinishedAt:      now,
-		CaseID:          caseID,
-		Profile:         profileName,
-		Provider:        profile.Provider,
-		Model:           profile.Model,
-		Endpoint:        profile.Endpoint,
-		Success:         false,
-		Error:           err.Error(),
-		TotalScore:      0,
-		RawScore:        0,
-		MaxScore:        0,
-		NormalizedScore: 0,
+		Timestamp:         now,
+		FinishedAt:        now,
+		CaseID:            caseID,
+		Profile:           profileName,
+		Provider:          profile.Provider,
+		Model:             profile.Model,
+		ModelVendor:       profile.ModelVendor,
+		InferenceProvider: profile.InferenceProvider,
+		Endpoint:          profile.Endpoint,
+		Success:           false,
+		Error:             err.Error(),
+		TotalScore:        0,
+		RawScore:          0,
+		MaxScore:          0,
+		NormalizedScore:   0,
 	}
 }
 

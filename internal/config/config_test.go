@@ -19,6 +19,8 @@ profiles:
   demo:
     provider: openai
     model: gpt-4o
+    model_vendor: " OpenAI "
+    inference_provider: " OpenAI "
     api_key: ${OPENAI_API_KEY}
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -41,6 +43,12 @@ profiles:
 	}
 	if got := cfg.Profiles["demo"].Endpoint; got != defaultOpenAIAPI {
 		t.Fatalf("endpoint = %q, want %q", got, defaultOpenAIAPI)
+	}
+	if got := cfg.Profiles["demo"].ModelVendor; got != "OpenAI" {
+		t.Fatalf("model_vendor = %q, want %q", got, "OpenAI")
+	}
+	if got := cfg.Profiles["demo"].InferenceProvider; got != "OpenAI" {
+		t.Fatalf("inference_provider = %q, want %q", got, "OpenAI")
 	}
 	if got := cfg.Serve.Listen; got != "127.0.0.1:9999" {
 		t.Fatalf("listen = %q, want %q", got, "127.0.0.1:9999")

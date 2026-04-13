@@ -107,6 +107,10 @@ components:
           type: string
         model:
           type: string
+        model_vendor:
+          type: string
+        inference_provider:
+          type: string
         success:
           type: boolean
         total_score:
@@ -134,6 +138,8 @@ components:
         - profile
         - provider
         - model
+        - model_vendor
+        - inference_provider
         - success
         - total_score
         - raw_score
