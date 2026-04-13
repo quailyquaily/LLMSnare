@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"llmsnare/internal/benchmark"
+	"llmsnare/internal/config"
 	"llmsnare/internal/storage"
 
 	"github.com/google/uuid"
@@ -388,6 +389,72 @@ func TestTimelinesSupportsQueryFilters(t *testing.T) {
 	}
 	if _, ok := profiles["beta"]; !ok {
 		t.Fatalf("profiles = %#v, want only beta", profiles)
+	}
+}
+
+func TestTimelineMetadataFallsBackToConfigWhenStoredFieldsAreEmpty(t *testing.T) {
+	store := storage.New(t.TempDir())
+	appendTimelineResult(t, store, benchmark.Result{
+		Timestamp:       time.Unix(1, 0).UTC(),
+		FinishedAt:      time.Unix(2, 0).UTC(),
+		CaseID:          "sample_case",
+		Profile:         "demo",
+		Success:         true,
+		TotalScore:      1,
+		RawScore:        1,
+		MaxScore:        10,
+		NormalizedScore: 10,
+	})
+
+	server := NewServer(store, map[string]config.Profile{
+		"demo": {
+			Provider:          "openai",
+			Model:             "gpt-4o",
+			ModelVendor:       "openai",
+			InferenceProvider: "cloudflare",
+		},
+	})
+
+	payload := decodeTimelineProfileResponse(t, server, "/v1/timelines/demo")
+	for key, want := range map[string]string{
+		"provider":           "openai",
+		"model":              "gpt-4o",
+		"model_vendor":       "openai",
+		"inference_provider": "cloudflare",
+	} {
+		if got := payload[key]; got != want {
+			t.Fatalf("%s = %#v, want %q", key, got, want)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/timelines", nil)
+	rec := httptest.NewRecorder()
+	server.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var allPayload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &allPayload); err != nil {
+		t.Fatalf("decode all payload: %v", err)
+	}
+	profiles, ok := allPayload["profiles"].(map[string]any)
+	if !ok {
+		t.Fatalf("profiles = %#v, want object", allPayload["profiles"])
+	}
+	demo, ok := profiles["demo"].(map[string]any)
+	if !ok {
+		t.Fatalf("profiles[demo] = %#v, want object", profiles["demo"])
+	}
+	for key, want := range map[string]string{
+		"provider":           "openai",
+		"model":              "gpt-4o",
+		"model_vendor":       "openai",
+		"inference_provider": "cloudflare",
+	} {
+		if got := demo[key]; got != want {
+			t.Fatalf("%s = %#v, want %q", key, got, want)
+		}
 	}
 }
 

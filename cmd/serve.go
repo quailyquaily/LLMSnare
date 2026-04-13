@@ -28,7 +28,7 @@ func newServeCommand() *cobra.Command {
 				return err
 			}
 
-			server := api.NewServer(store)
+			server := api.NewServer(store, cfg.Profiles)
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 

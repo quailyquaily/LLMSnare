@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"llmsnare/internal/benchmark"
+	"llmsnare/internal/config"
 	"llmsnare/internal/storage"
 )
 
@@ -22,8 +23,9 @@ const maxTimelineEntries = 1024
 var openAPISpec []byte
 
 type Server struct {
-	store *storage.Store
-	cache *responseCache
+	store    *storage.Store
+	cache    *responseCache
+	profiles map[string]config.Profile
 }
 
 type timelineEntry struct {
@@ -75,10 +77,15 @@ type cachedResponse struct {
 	body    []byte
 }
 
-func NewServer(store *storage.Store) *Server {
+func NewServer(store *storage.Store, profiles ...map[string]config.Profile) *Server {
+	var profileMap map[string]config.Profile
+	if len(profiles) > 0 {
+		profileMap = profiles[0]
+	}
 	return &Server{
-		store: store,
-		cache: &responseCache{entries: make(map[string]cachedResponse)},
+		store:    store,
+		cache:    &responseCache{entries: make(map[string]cachedResponse)},
+		profiles: profileMap,
 	}
 }
 
@@ -136,7 +143,7 @@ func (s *Server) handleTimelines(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"profiles": projectTimelineGroups(data)}, nil
+		return map[string]any{"profiles": s.projectTimelineGroups(data)}, nil
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -181,7 +188,7 @@ func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		return projectTimelineProfile(profile, entries, sample), nil
+		return s.projectTimelineProfile(profile, entries, sample), nil
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -190,10 +197,10 @@ func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSONBytes(w, http.StatusOK, body)
 }
 
-func projectTimelineGroups(groups map[string][]benchmark.Result) map[string]timelineProfileGroup {
+func (s *Server) projectTimelineGroups(groups map[string][]benchmark.Result) map[string]timelineProfileGroup {
 	projected := make(map[string]timelineProfileGroup, len(groups))
 	for profile, entries := range groups {
-		projected[profile] = projectTimelineGroup(entries)
+		projected[profile] = s.projectTimelineGroup(profile, entries)
 	}
 	return projected
 }
@@ -206,8 +213,8 @@ func projectTimelineEntries(entries []benchmark.Result) []timelineEntry {
 	return projected
 }
 
-func projectTimelineGroup(entries []benchmark.Result) timelineProfileGroup {
-	metadata := projectTimelineMetadata(entries, nil)
+func (s *Server) projectTimelineGroup(profile string, entries []benchmark.Result) timelineProfileGroup {
+	metadata := s.projectTimelineMetadata(profile, entries, nil)
 	return timelineProfileGroup{
 		Provider:          metadata.Provider,
 		Model:             metadata.Model,
@@ -217,8 +224,8 @@ func projectTimelineGroup(entries []benchmark.Result) timelineProfileGroup {
 	}
 }
 
-func projectTimelineProfile(profile string, entries []benchmark.Result, sample *benchmark.Result) timelineProfileResponse {
-	metadata := projectTimelineMetadata(entries, sample)
+func (s *Server) projectTimelineProfile(profile string, entries []benchmark.Result, sample *benchmark.Result) timelineProfileResponse {
+	metadata := s.projectTimelineMetadata(profile, entries, sample)
 	return timelineProfileResponse{
 		Profile:           profile,
 		Provider:          metadata.Provider,
@@ -229,14 +236,31 @@ func projectTimelineProfile(profile string, entries []benchmark.Result, sample *
 	}
 }
 
-func projectTimelineMetadata(entries []benchmark.Result, sample *benchmark.Result) benchmark.Result {
+func (s *Server) projectTimelineMetadata(profile string, entries []benchmark.Result, sample *benchmark.Result) benchmark.Result {
+	metadata := benchmark.Result{}
 	if len(entries) > 0 {
-		return entries[0]
+		metadata = entries[0]
+	} else if sample != nil {
+		metadata = *sample
 	}
-	if sample != nil {
-		return *sample
+
+	profileCfg, ok := s.profiles[profile]
+	if !ok {
+		return metadata
 	}
-	return benchmark.Result{}
+	if strings.TrimSpace(metadata.Provider) == "" {
+		metadata.Provider = profileCfg.Provider
+	}
+	if strings.TrimSpace(metadata.Model) == "" {
+		metadata.Model = profileCfg.Model
+	}
+	if strings.TrimSpace(metadata.ModelVendor) == "" {
+		metadata.ModelVendor = profileCfg.ModelVendor
+	}
+	if strings.TrimSpace(metadata.InferenceProvider) == "" {
+		metadata.InferenceProvider = profileCfg.InferenceProvider
+	}
+	return metadata
 }
 
 func projectTimelineEntry(entry benchmark.Result) timelineEntry {
