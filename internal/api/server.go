@@ -27,6 +27,7 @@ type Server struct {
 }
 
 type timelineEntry struct {
+	RunID             string                      `json:"run_id,omitempty"`
 	Timestamp         time.Time                   `json:"timestamp"`
 	FinishedAt        time.Time                   `json:"finished_at"`
 	CaseID            string                      `json:"case_id"`
@@ -110,14 +111,15 @@ func (s *Server) handleTimelines(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	filter := parseTimelineFilter(r)
 
 	version, err := s.store.AllVersion()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	body, err := s.cachedJSON(cacheKeyAllTimelines(limit), version, func() (any, error) {
-		data, err := s.store.LoadAll(limit)
+	body, err := s.cachedJSON(cacheKeyAllTimelines(limit, filter), version, func() (any, error) {
+		data, err := s.store.LoadAll(limit, filter)
 		if err != nil {
 			return nil, err
 		}
@@ -136,6 +138,7 @@ func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	filter := parseTimelineFilter(r)
 
 	profile := strings.TrimPrefix(r.URL.Path, "/v1/timelines/")
 	if profile == "" {
@@ -148,8 +151,8 @@ func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	body, err := s.cachedJSON(cacheKeyTimelineProfile(profile, limit), version, func() (any, error) {
-		entries, err := s.store.LoadProfile(profile, limit)
+	body, err := s.cachedJSON(cacheKeyTimelineProfile(profile, limit, filter), version, func() (any, error) {
+		entries, err := s.store.LoadProfile(profile, limit, filter)
 		if err != nil {
 			return nil, err
 		}
@@ -183,6 +186,7 @@ func projectTimelineEntries(entries []benchmark.Result) []timelineEntry {
 
 func projectTimelineEntry(entry benchmark.Result) timelineEntry {
 	return timelineEntry{
+		RunID:             entry.RunID,
 		Timestamp:         entry.Timestamp,
 		FinishedAt:        entry.FinishedAt,
 		CaseID:            entry.CaseID,
@@ -229,12 +233,27 @@ func parseLimit(r *http.Request) (int, error) {
 	return limit, nil
 }
 
-func cacheKeyAllTimelines(limit int) string {
-	return "all:" + strconv.Itoa(limit)
+func parseTimelineFilter(r *http.Request) storage.TimelineFilter {
+	return storage.TimelineFilter{
+		ModelVendor:       strings.TrimSpace(r.URL.Query().Get("model_vendor")),
+		InferenceProvider: strings.TrimSpace(r.URL.Query().Get("inference_provider")),
+	}
 }
 
-func cacheKeyTimelineProfile(profile string, limit int) string {
-	return "profile:" + profile + ":" + strconv.Itoa(limit)
+func cacheKeyAllTimelines(limit int, filter storage.TimelineFilter) string {
+	return "all:" + strconv.Itoa(limit) + ":" + timelineFilterCacheKey(filter)
+}
+
+func cacheKeyTimelineProfile(profile string, limit int, filter storage.TimelineFilter) string {
+	return "profile:" + profile + ":" + strconv.Itoa(limit) + ":" + timelineFilterCacheKey(filter)
+}
+
+func timelineFilterCacheKey(filter storage.TimelineFilter) string {
+	filter = storage.TimelineFilter{
+		ModelVendor:       strings.TrimSpace(filter.ModelVendor),
+		InferenceProvider: strings.TrimSpace(filter.InferenceProvider),
+	}
+	return "mv=" + filter.ModelVendor + ",ip=" + filter.InferenceProvider
 }
 
 func (s *Server) cachedJSON(key, version string, build func() (any, error)) ([]byte, error) {

@@ -102,6 +102,7 @@ func progressEventBase(caseID, profileName string, profile config.Profile) Progr
 }
 
 type Result struct {
+	RunID             string            `json:"run_id,omitempty"`
 	Timestamp         time.Time         `json:"timestamp"`
 	FinishedAt        time.Time         `json:"finished_at"`
 	CaseID            string            `json:"case_id"`
@@ -123,6 +124,24 @@ type Result struct {
 	ToolCalls         []ToolCallLog     `json:"tool_calls"`
 	FinalWrites       map[string]string `json:"final_writes,omitempty"`
 	FinalResponse     string            `json:"final_response,omitempty"`
+}
+
+func (r *Result) UnmarshalJSON(data []byte) error {
+	type resultAlias Result
+	type resultPayload struct {
+		resultAlias
+		LegacyTimelineID string `json:"timeline_id"`
+	}
+
+	var payload resultPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	*r = Result(payload.resultAlias)
+	if strings.TrimSpace(r.RunID) == "" {
+		r.RunID = strings.TrimSpace(payload.LegacyTimelineID)
+	}
+	return nil
 }
 
 type Metrics struct {

@@ -93,8 +93,8 @@ func newRunCommand() *cobra.Command {
 
 func persistResults(timelineDir string, results []benchmark.Result) error {
 	store := storage.New(timelineDir)
-	for _, result := range results {
-		if err := store.Append(result); err != nil {
+	for i := range results {
+		if err := store.Append(&results[i]); err != nil {
 			return err
 		}
 	}

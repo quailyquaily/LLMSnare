@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"llmsnare/internal/benchmark"
+
+	"github.com/google/uuid"
 )
 
 func TestAppendAndLoadProfile(t *testing.T) {
@@ -24,11 +26,21 @@ func TestAppendAndLoadProfile(t *testing.T) {
 		NormalizedScore:   88,
 	}
 
-	if err := store.Append(result); err != nil {
+	if err := store.Append(&result); err != nil {
 		t.Fatalf("Append returned error: %v", err)
 	}
+	if result.RunID == "" {
+		t.Fatal("run_id = empty, want generated ID")
+	}
+	generatedID, err := uuid.Parse(result.RunID)
+	if err != nil {
+		t.Fatalf("parse generated run_id: %v", err)
+	}
+	if got := generatedID.Version(); got != 7 {
+		t.Fatalf("run_id version = %d, want 7", got)
+	}
 
-	loaded, err := store.LoadProfile("demo", 0)
+	loaded, err := store.LoadProfile("demo", 0, TimelineFilter{})
 	if err != nil {
 		t.Fatalf("LoadProfile returned error: %v", err)
 	}
@@ -46,5 +58,8 @@ func TestAppendAndLoadProfile(t *testing.T) {
 	}
 	if loaded[0].InferenceProvider != "cloudflare" {
 		t.Fatalf("loaded inference_provider = %q, want %q", loaded[0].InferenceProvider, "cloudflare")
+	}
+	if loaded[0].RunID != result.RunID {
+		t.Fatalf("loaded run_id = %q, want %q", loaded[0].RunID, result.RunID)
 	}
 }

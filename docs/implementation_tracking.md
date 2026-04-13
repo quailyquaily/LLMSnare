@@ -53,3 +53,4 @@ Build the initial `llmsnare` Go application described in [init_requirement.md](.
 - H7 should be judged from the written `main.go` content plus whether the vendor file was actually read.
 - Checker field reference lives in [check_reference.md](./check_reference.md).
 - Case file format reference lives in [case_format.md](./case_format.md).
+- Timeline WAL 与 SQLite 投影视图方案见 [timeline_sqlite_projection.md](./timeline_sqlite_projection.md).

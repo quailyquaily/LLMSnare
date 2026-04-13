@@ -41,6 +41,18 @@ paths:
             maximum: 1024
           required: false
           description: Return only the last N entries per profile. Defaults to 1024 and is capped at 1024.
+        - in: query
+          name: model_vendor
+          schema:
+            type: string
+          required: false
+          description: Return only entries whose model_vendor exactly matches this value.
+        - in: query
+          name: inference_provider
+          schema:
+            type: string
+          required: false
+          description: Return only entries whose inference_provider exactly matches this value.
       responses:
         "200":
           description: Timelines keyed by profile name
@@ -73,6 +85,18 @@ paths:
             maximum: 1024
           required: false
           description: Return only the last N entries. Defaults to 1024 and is capped at 1024.
+        - in: query
+          name: model_vendor
+          schema:
+            type: string
+          required: false
+          description: Return only entries whose model_vendor exactly matches this value.
+        - in: query
+          name: inference_provider
+          schema:
+            type: string
+          required: false
+          description: Return only entries whose inference_provider exactly matches this value.
       responses:
         "200":
           description: Timeline entries for the requested profile
@@ -93,6 +117,8 @@ components:
     BenchmarkResult:
       type: object
       properties:
+        run_id:
+          type: string
         timestamp:
           type: string
           format: date-time

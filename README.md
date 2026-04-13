@@ -4,6 +4,22 @@
 
 The benchmark checks whether a model actually reads code before editing, follows existing helpers, recovers from misleading paths, and writes output that matches repository conventions.
 
+## What It Measures
+
+- `llmsnare` is meant for repeated runs against the same case set. The normal workflow is to persist results and inspect timelines, not to treat one run as the whole story.
+- It focuses on tool-driven code agent behavior: whether the model will `list_dir`, `read_file`, and only then `write_file`.
+- It is useful for judging whether a model is likely to behave well in a tool-calling agent. Models that are weak at tool use usually score poorly here.
+- It checks whether the model writes too early after seeing partial context. Low `read_write_ratio`, low `pre_write_read_coverage`, and writes before required reads are all penalized.
+- It does not hide the reasons behind the score. Each run records tool logs, final writes, deductions, bonuses, and automatic metrics.
+- Coverage is case-driven. The runner stays fixed, while `prompt`, `rootfs`, and scoring rules define what each case actually tests.
+
+## What It Does Not Measure
+
+- It does not rank general model intelligence or broad ability across arbitrary coding, math, or writing tasks.
+- It cannot prove that a model is broadly "good at coding". It only shows how the model behaves inside the specific benchmark cases you run.
+- A score here should be read as evidence about context fidelity and tool-use discipline, not as a complete judgment of agent quality.
+- Conclusions are only as strong as the case set. A small smoke-test case supports only small conclusions.
+
 ## Commands
 
 ### Initialize
@@ -102,6 +118,26 @@ Expose timelines over HTTP:
 
 ```bash
 llmsnare serve --config ./config.yaml
+```
+
+### Maintain Timeline Storage
+
+Backfill missing `run_id` values in existing WAL files:
+
+```bash
+llmsnare timeline backfill-run-id --config ./config.yaml
+```
+
+Rebuild the SQLite projection from WAL:
+
+```bash
+llmsnare timeline rebuild-sqlite --config ./config.yaml
+```
+
+Inspect whether timeline reads currently use WAL or SQLite:
+
+```bash
+llmsnare timeline status --config ./config.yaml
 ```
 
 ## Release
@@ -239,10 +275,11 @@ Response shapes:
 - `GET /v1/timelines/{profile}` returns `{"profile":"<profile>","entries":[BenchmarkResult,...]}`
 - all endpoints include `Access-Control-Allow-Origin: *` for browser access
 - timeline endpoints default to the latest 1024 entries and cap `limit` at 1024
+- timeline endpoints support `model_vendor` and `inference_provider` query filters
 
 Each `BenchmarkResult` includes:
 
-- run metadata: `timestamp`, `finished_at`, `case_id`, `profile`, `provider`, `model`, `model_vendor`, `inference_provider`, `success`
+- run metadata: `run_id`, `timestamp`, `finished_at`, `case_id`, `profile`, `provider`, `model`, `model_vendor`, `inference_provider`, `success`
 - scores: `total_score`, `raw_score`, `max_score`, `normalized_score`
 - automatic metrics: `read_file_calls`, `write_file_calls`, `list_dir_calls`, `read_write_ratio`, `pre_write_read_coverage`
 - scoring details: `deductions`, `bonuses`

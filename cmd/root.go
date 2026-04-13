@@ -26,5 +26,6 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProfilesCommand())
 	rootCmd.AddCommand(newRunCommand())
 	rootCmd.AddCommand(newServeCommand())
+	rootCmd.AddCommand(newTimelineCommand())
 	return rootCmd
 }

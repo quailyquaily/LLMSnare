@@ -10,6 +10,8 @@ import (
 
 	"llmsnare/internal/benchmark"
 	"llmsnare/internal/storage"
+
+	"github.com/google/uuid"
 )
 
 func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
@@ -49,7 +51,7 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 		FinalWrites:   map[string]string{"main.go": "package main"},
 		FinalResponse: "done",
 	}
-	if err := store.Append(result); err != nil {
+	if err := store.Append(&result); err != nil {
 		t.Fatalf("Append returned error: %v", err)
 	}
 
@@ -86,6 +88,17 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 	if got := entry["inference_provider"]; got != "cloudflare" {
 		t.Fatalf("inference_provider = %#v, want %q", got, "cloudflare")
 	}
+	rawRunID, ok := entry["run_id"].(string)
+	if !ok || rawRunID == "" {
+		t.Fatalf("run_id = %#v, want non-empty string", entry["run_id"])
+	}
+	runID, err := uuid.Parse(rawRunID)
+	if err != nil {
+		t.Fatalf("parse run_id: %v", err)
+	}
+	if got := runID.Version(); got != 7 {
+		t.Fatalf("run_id version = %d, want 7", got)
+	}
 
 	bonuses, ok := entry["bonuses"].([]any)
 	if !ok || len(bonuses) != 1 {
@@ -105,7 +118,7 @@ func TestTimelineProfileOmitsHeavyFields(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, "*")
 	}
-	if got := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries)); got == "" {
+	if got := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries, storage.TimelineFilter{})); got == "" {
 		t.Fatal("expected profile response to be cached")
 	}
 }
@@ -143,7 +156,7 @@ func TestTimelineProfileDefaultsToMax1024Entries(t *testing.T) {
 			MaxScore:        maxTimelineEntries + 1,
 			NormalizedScore: float64(i),
 		}
-		if err := store.Append(result); err != nil {
+		if err := store.Append(&result); err != nil {
 			t.Fatalf("Append returned error: %v", err)
 		}
 	}
@@ -216,7 +229,7 @@ func TestTimelineProfileCacheRefreshesAfterAppend(t *testing.T) {
 	if len(first["entries"].([]any)) != 1 {
 		t.Fatalf("first entries len = %d, want 1", len(first["entries"].([]any)))
 	}
-	firstVersion := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries))
+	firstVersion := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries, storage.TimelineFilter{}))
 	if firstVersion == "" {
 		t.Fatal("expected first response to populate cache")
 	}
@@ -243,15 +256,77 @@ func TestTimelineProfileCacheRefreshesAfterAppend(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("second entries len = %d, want 2", len(entries))
 	}
-	secondVersion := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries))
+	secondVersion := cachedResponseVersion(t, server, cacheKeyTimelineProfile("demo", maxTimelineEntries, storage.TimelineFilter{}))
 	if secondVersion == "" || secondVersion == firstVersion {
 		t.Fatalf("cache version = %q, want refresh from %q", secondVersion, firstVersion)
 	}
 }
 
+func TestTimelinesSupportsMetadataFilters(t *testing.T) {
+	store := storage.New(t.TempDir())
+	appendTimelineResult(t, store, benchmark.Result{
+		Timestamp:         time.Unix(1, 0).UTC(),
+		FinishedAt:        time.Unix(2, 0).UTC(),
+		CaseID:            "sample_case",
+		Profile:           "alpha",
+		Provider:          "openai",
+		Model:             "gpt-4o",
+		ModelVendor:       "openai",
+		InferenceProvider: "openai",
+		Success:           true,
+		TotalScore:        1,
+		RawScore:          1,
+		MaxScore:          10,
+		NormalizedScore:   10,
+	})
+	appendTimelineResult(t, store, benchmark.Result{
+		Timestamp:         time.Unix(3, 0).UTC(),
+		FinishedAt:        time.Unix(4, 0).UTC(),
+		CaseID:            "sample_case",
+		Profile:           "beta",
+		Provider:          "openai",
+		Model:             "gpt-4o-mini",
+		ModelVendor:       "openai",
+		InferenceProvider: "cloudflare",
+		Success:           true,
+		TotalScore:        2,
+		RawScore:          2,
+		MaxScore:          10,
+		NormalizedScore:   20,
+	})
+
+	server := NewServer(store)
+	payload := decodeTimelineProfileResponse(t, server, "/v1/timelines/beta?inference_provider=cloudflare")
+	entries, ok := payload["entries"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("entries = %#v, want one filtered entry", payload["entries"])
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/timelines?inference_provider=cloudflare", nil)
+	rec := httptest.NewRecorder()
+	server.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var allPayload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &allPayload); err != nil {
+		t.Fatalf("decode all payload: %v", err)
+	}
+	profiles, ok := allPayload["profiles"].(map[string]any)
+	if !ok {
+		t.Fatalf("profiles = %#v, want object", allPayload["profiles"])
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("len(profiles) = %d, want 1", len(profiles))
+	}
+	if _, ok := profiles["beta"]; !ok {
+		t.Fatalf("profiles = %#v, want only beta", profiles)
+	}
+}
+
 func appendTimelineResult(t *testing.T, store *storage.Store, result benchmark.Result) {
 	t.Helper()
-	if err := store.Append(result); err != nil {
+	if err := store.Append(&result); err != nil {
 		t.Fatalf("Append returned error: %v", err)
 	}
 }

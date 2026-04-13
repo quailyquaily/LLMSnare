@@ -11,6 +11,7 @@ import (
 	"llmsnare/internal/benchmark"
 	"llmsnare/internal/storage"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -272,7 +273,7 @@ func TestPersistResultsAppendsTimelineEntries(t *testing.T) {
 		t.Fatalf("persistResults returned error: %v", err)
 	}
 
-	loaded, err := storage.New(dir).LoadProfile("demo", 0)
+	loaded, err := storage.New(dir).LoadProfile("demo", 0, storage.TimelineFilter{})
 	if err != nil {
 		t.Fatalf("LoadProfile returned error: %v", err)
 	}
@@ -287,5 +288,18 @@ func TestPersistResultsAppendsTimelineEntries(t *testing.T) {
 	}
 	if got := loaded[0].InferenceProvider; got != "cloudflare" {
 		t.Fatalf("inference_provider = %q, want %q", got, "cloudflare")
+	}
+	if results[0].RunID == "" {
+		t.Fatal("results[0].run_id = empty, want generated ID")
+	}
+	parsedID, err := uuid.Parse(results[0].RunID)
+	if err != nil {
+		t.Fatalf("parse run_id: %v", err)
+	}
+	if got := parsedID.Version(); got != 7 {
+		t.Fatalf("run_id version = %d, want 7", got)
+	}
+	if got := loaded[0].RunID; got != results[0].RunID {
+		t.Fatalf("loaded run_id = %q, want %q", got, results[0].RunID)
 	}
 }

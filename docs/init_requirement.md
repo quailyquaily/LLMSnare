@@ -88,6 +88,7 @@ llmsnare serve
 
 每一行表示一次运行结果，至少包含：
 
+- 稳定的 `run_id`
 - 运行时间
 - profile 名称
 - 总分
@@ -96,6 +97,7 @@ llmsnare serve
 
 这里的 timeline 至少要包含：
 
+- 每条记录的稳定 ID
 - profile 名称
 - 每次运行时间
 - 每次运行总分
