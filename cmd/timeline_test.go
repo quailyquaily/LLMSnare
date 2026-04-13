@@ -76,7 +76,7 @@ profiles:
 		"sqlite_ready: true",
 		"sqlite_dirty: false",
 		"sqlite_rows: 1",
-		"sqlite_schema_version: 1",
+		"sqlite_schema_version: 2",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("status output missing %q:\n%s", want, got)

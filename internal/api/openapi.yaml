@@ -42,6 +42,12 @@ paths:
           required: false
           description: Return only the last N entries per profile. Defaults to 1024 and is capped at 1024.
         - in: query
+          name: model
+          schema:
+            type: string
+          required: false
+          description: Return only entries whose model exactly matches this value.
+        - in: query
           name: model_vendor
           schema:
             type: string
@@ -53,6 +59,12 @@ paths:
             type: string
           required: false
           description: Return only entries whose inference_provider exactly matches this value.
+        - in: query
+          name: case_id
+          schema:
+            type: string
+          required: false
+          description: Return only entries whose case_id exactly matches this value.
       responses:
         "200":
           description: Timelines keyed by profile name
@@ -86,6 +98,12 @@ paths:
           required: false
           description: Return only the last N entries. Defaults to 1024 and is capped at 1024.
         - in: query
+          name: model
+          schema:
+            type: string
+          required: false
+          description: Return only entries whose model exactly matches this value.
+        - in: query
           name: model_vendor
           schema:
             type: string
@@ -97,6 +115,12 @@ paths:
             type: string
           required: false
           description: Return only entries whose inference_provider exactly matches this value.
+        - in: query
+          name: case_id
+          schema:
+            type: string
+          required: false
+          description: Return only entries whose case_id exactly matches this value.
       responses:
         "200":
           description: Timeline entries for the requested profile

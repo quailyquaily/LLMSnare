@@ -275,7 +275,7 @@ Response shapes:
 - `GET /v1/timelines/{profile}` returns `{"profile":"<profile>","entries":[BenchmarkResult,...]}`
 - all endpoints include `Access-Control-Allow-Origin: *` for browser access
 - timeline endpoints default to the latest 1024 entries and cap `limit` at 1024
-- timeline endpoints support `model_vendor` and `inference_provider` query filters
+- timeline endpoints support `model`, `model_vendor`, `inference_provider`, and `case_id` query filters
 
 Each `BenchmarkResult` includes:
 

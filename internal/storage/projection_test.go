@@ -135,6 +135,20 @@ func TestRebuildProjectionUsesSQLiteAfterReady(t *testing.T) {
 	if got := beta[0].RunID; got != results[1].RunID {
 		t.Fatalf("run_id = %q, want %q", got, results[1].RunID)
 	}
+
+	filtered, err := store.LoadProfile("beta", 0, TimelineFilter{
+		Model:  "gpt-4o-mini",
+		CaseID: "sample_case",
+	})
+	if err != nil {
+		t.Fatalf("LoadProfile returned error: %v", err)
+	}
+	if len(filtered) != 1 {
+		t.Fatalf("len(filtered) = %d, want 1", len(filtered))
+	}
+	if got := filtered[0].RunID; got != results[1].RunID {
+		t.Fatalf("filtered run_id = %q, want %q", got, results[1].RunID)
+	}
 }
 
 func writeLegacyWAL(t *testing.T, store *Store, profile string, result benchmark.Result) {

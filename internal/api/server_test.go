@@ -262,7 +262,7 @@ func TestTimelineProfileCacheRefreshesAfterAppend(t *testing.T) {
 	}
 }
 
-func TestTimelinesSupportsMetadataFilters(t *testing.T) {
+func TestTimelinesSupportsQueryFilters(t *testing.T) {
 	store := storage.New(t.TempDir())
 	appendTimelineResult(t, store, benchmark.Result{
 		Timestamp:         time.Unix(1, 0).UTC(),
@@ -282,7 +282,7 @@ func TestTimelinesSupportsMetadataFilters(t *testing.T) {
 	appendTimelineResult(t, store, benchmark.Result{
 		Timestamp:         time.Unix(3, 0).UTC(),
 		FinishedAt:        time.Unix(4, 0).UTC(),
-		CaseID:            "sample_case",
+		CaseID:            "alt_case",
 		Profile:           "beta",
 		Provider:          "openai",
 		Model:             "gpt-4o-mini",
@@ -313,6 +313,33 @@ func TestTimelinesSupportsMetadataFilters(t *testing.T) {
 		t.Fatalf("decode all payload: %v", err)
 	}
 	profiles, ok := allPayload["profiles"].(map[string]any)
+	if !ok {
+		t.Fatalf("profiles = %#v, want object", allPayload["profiles"])
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("len(profiles) = %d, want 1", len(profiles))
+	}
+	if _, ok := profiles["beta"]; !ok {
+		t.Fatalf("profiles = %#v, want only beta", profiles)
+	}
+
+	payload = decodeTimelineProfileResponse(t, server, "/v1/timelines/beta?model=gpt-4o-mini&case_id=alt_case")
+	entries, ok = payload["entries"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("entries = %#v, want one model+case entry", payload["entries"])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/timelines?model=gpt-4o-mini&case_id=alt_case", nil)
+	rec = httptest.NewRecorder()
+	server.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	allPayload = make(map[string]any)
+	if err := json.Unmarshal(rec.Body.Bytes(), &allPayload); err != nil {
+		t.Fatalf("decode model+case payload: %v", err)
+	}
+	profiles, ok = allPayload["profiles"].(map[string]any)
 	if !ok {
 		t.Fatalf("profiles = %#v, want object", allPayload["profiles"])
 	}

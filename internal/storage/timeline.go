@@ -18,8 +18,10 @@ import (
 const projectionFilename = "timeline.sqlite3"
 
 type TimelineFilter struct {
+	Model             string
 	ModelVendor       string
 	InferenceProvider string
+	CaseID            string
 }
 
 type Store struct {

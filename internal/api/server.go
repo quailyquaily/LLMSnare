@@ -235,8 +235,10 @@ func parseLimit(r *http.Request) (int, error) {
 
 func parseTimelineFilter(r *http.Request) storage.TimelineFilter {
 	return storage.TimelineFilter{
+		Model:             strings.TrimSpace(r.URL.Query().Get("model")),
 		ModelVendor:       strings.TrimSpace(r.URL.Query().Get("model_vendor")),
 		InferenceProvider: strings.TrimSpace(r.URL.Query().Get("inference_provider")),
+		CaseID:            strings.TrimSpace(r.URL.Query().Get("case_id")),
 	}
 }
 
@@ -250,10 +252,12 @@ func cacheKeyTimelineProfile(profile string, limit int, filter storage.TimelineF
 
 func timelineFilterCacheKey(filter storage.TimelineFilter) string {
 	filter = storage.TimelineFilter{
+		Model:             strings.TrimSpace(filter.Model),
 		ModelVendor:       strings.TrimSpace(filter.ModelVendor),
 		InferenceProvider: strings.TrimSpace(filter.InferenceProvider),
+		CaseID:            strings.TrimSpace(filter.CaseID),
 	}
-	return "mv=" + filter.ModelVendor + ",ip=" + filter.InferenceProvider
+	return "m=" + filter.Model + ",mv=" + filter.ModelVendor + ",ip=" + filter.InferenceProvider + ",cid=" + filter.CaseID
 }
 
 func (s *Server) cachedJSON(key, version string, build func() (any, error)) ([]byte, error) {

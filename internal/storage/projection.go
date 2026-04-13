@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	projectionSchemaVersion = "1"
+	projectionSchemaVersion = "2"
 	maxJSONLLineBytes       = 10 * 1024 * 1024
 )
 
@@ -28,17 +28,25 @@ type ProjectionStats struct {
 }
 
 func normalizeFilter(filter TimelineFilter) TimelineFilter {
+	filter.Model = strings.TrimSpace(filter.Model)
 	filter.ModelVendor = strings.TrimSpace(filter.ModelVendor)
 	filter.InferenceProvider = strings.TrimSpace(filter.InferenceProvider)
+	filter.CaseID = strings.TrimSpace(filter.CaseID)
 	return filter
 }
 
 func matchesFilter(result benchmark.Result, filter TimelineFilter) bool {
 	filter = normalizeFilter(filter)
+	if filter.Model != "" && result.Model != filter.Model {
+		return false
+	}
 	if filter.ModelVendor != "" && result.ModelVendor != filter.ModelVendor {
 		return false
 	}
 	if filter.InferenceProvider != "" && result.InferenceProvider != filter.InferenceProvider {
+		return false
+	}
+	if filter.CaseID != "" && result.CaseID != filter.CaseID {
 		return false
 	}
 	return true
@@ -367,6 +375,9 @@ func ensureProjectionSchema(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_timeline_runs_profile_finished_at ON timeline_runs (profile, finished_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_timeline_runs_model_vendor_finished_at ON timeline_runs (model_vendor, finished_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_timeline_runs_inference_provider_finished_at ON timeline_runs (inference_provider, finished_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_timeline_runs_model_vendor_inference_provider_profile_finished_at ON timeline_runs (model_vendor, inference_provider, profile, finished_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_timeline_runs_model_profile_finished_at ON timeline_runs (model, profile, finished_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_timeline_runs_case_id_profile_finished_at ON timeline_runs (case_id, profile, finished_at DESC)`,
 		`INSERT INTO projection_meta (key, value) VALUES ('schema_version', ?)
 			ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 	}
@@ -563,11 +574,15 @@ func queryProjectionRows(db *sql.DB, profile string, limit int, filter TimelineF
 }
 
 func buildProjectionWhere(profile string, filter TimelineFilter) (string, []any) {
-	clauses := make([]string, 0, 3)
-	args := make([]any, 0, 3)
+	clauses := make([]string, 0, 5)
+	args := make([]any, 0, 5)
 	if strings.TrimSpace(profile) != "" {
 		clauses = append(clauses, "profile = ?")
 		args = append(args, profile)
+	}
+	if filter.Model != "" {
+		clauses = append(clauses, "model = ?")
+		args = append(args, filter.Model)
 	}
 	if filter.ModelVendor != "" {
 		clauses = append(clauses, "model_vendor = ?")
@@ -576,6 +591,10 @@ func buildProjectionWhere(profile string, filter TimelineFilter) (string, []any)
 	if filter.InferenceProvider != "" {
 		clauses = append(clauses, "inference_provider = ?")
 		args = append(args, filter.InferenceProvider)
+	}
+	if filter.CaseID != "" {
+		clauses = append(clauses, "case_id = ?")
+		args = append(args, filter.CaseID)
 	}
 	if len(clauses) == 0 {
 		return "", args

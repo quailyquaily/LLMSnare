@@ -11,7 +11,7 @@
 
 它的问题也很明确：
 
-- 按 `model_vendor`、`inference_provider` 这类字段筛选时，只能全量扫描。
+- 按 `model`、`model_vendor`、`inference_provider`、`case_id` 这类字段筛选时，只能全量扫描。
 - `limit` 目前也要先读完整个文件，再做截断。
 - 数据量累计后，`serve` 的冷查询成本会线性增长。
 
@@ -43,7 +43,7 @@ WAL 是唯一 truth。
 
 SQLite 的角色是：
 
-- 提供按 `profile`、`model_vendor`、`inference_provider` 等字段的筛选能力
+- 提供按 `profile`、`model`、`model_vendor`、`inference_provider`、`case_id` 等字段的筛选能力
 - 提供按时间倒序取最近 N 条的能力
 - 为后续聚合、分页、排序留出空间
 
@@ -273,10 +273,9 @@ SQLite 只存 timeline API 需要的字段。
 - `(profile, finished_at DESC)`
 - `(model_vendor, finished_at DESC)`
 - `(inference_provider, finished_at DESC)`
-
-如果后面确认经常做组合筛选，再补：
-
-- `(model_vendor, inference_provider, finished_at DESC)`
+- `(model_vendor, inference_provider, profile, finished_at DESC)`
+- `(model, profile, finished_at DESC)`
+- `(case_id, profile, finished_at DESC)`
 
 ## 双写流程
 
@@ -486,7 +485,7 @@ SQLite 写入要基于 `run_id` 做幂等 upsert。
 ### 第三阶段
 
 - timeline API 改为从 SQLite 读取
-- 增加按 `model_vendor`、`inference_provider` 的筛选参数
+- 增加按 `model`、`model_vendor`、`inference_provider`、`case_id` 的筛选参数
 
 ## 结论
 
