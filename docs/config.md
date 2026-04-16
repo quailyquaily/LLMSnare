@@ -1,6 +1,6 @@
 # Config
 
-Example:
+`llmsnare init` writes this template:
 
 ```yaml
 version: 1
@@ -9,7 +9,7 @@ serve:
   listen: "127.0.0.1:8787"
 
 storage:
-  timeline_dir: "./state/timeline"
+  timeline_dir: "~/.local/state/llmsnare/timeline"
 
 profiles:
   openai_gpt4o:

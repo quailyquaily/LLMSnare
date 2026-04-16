@@ -47,25 +47,25 @@ llmsnare profiles --config ./config.yaml
 Run one profile:
 
 ```bash
-llmsnare run openai_gpt4o --config ./config.yaml
+llmsnare run openai_gpt4o --config ./config.yaml --case read_write_ratio_sample
 ```
 
 Run all profiles:
 
 ```bash
-llmsnare run --config ./config.yaml
+llmsnare run --config ./config.yaml --case read_write_ratio_sample
 ```
 
 Run multiple profiles in parallel while avoiding same-prefix profiles at the same time:
 
 ```bash
-llmsnare run --config ./config.yaml --parallel 4
+llmsnare run --config ./config.yaml --case read_write_ratio_sample --parallel 4
 ```
 
 Print JSON:
 
 ```bash
-llmsnare run openai_gpt4o --config ./config.yaml --json
+llmsnare run openai_gpt4o --config ./config.yaml --case read_write_ratio_sample --json
 ```
 
 Persist the result to timeline storage:

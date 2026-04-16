@@ -24,15 +24,15 @@ Each `TimelineEntry` includes:
 
 - run metadata: `run_id`, `timestamp`, `finished_at`, `case_id`, `profile`, `success`
 - scores: `total_score`, `raw_score`, `max_score`, `normalized_score`
-- automatic metrics: `read_file_calls`, `write_file_calls`, `list_dir_calls`, `read_write_ratio`, `pre_write_read_coverage`
+- automatic metrics under `metrics`: `read_file_calls`, `write_file_calls`, `list_dir_calls`, `read_write_ratio`, `pre_write_read_coverage`
 - scoring details: `deductions`, `bonuses`
 
 The API intentionally omits:
 
 - `endpoint`
+- `error`
 - `final_writes`
 - `final_response`
-- `bonuses[].description`
 - `tool_calls`
 
 Default listen address:

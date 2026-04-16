@@ -253,6 +253,8 @@ profiles:
   openai_gpt4o:
     provider: openai
     model: "gpt-4o"
+    model_vendor: "openai"
+    inference_provider: "openai"
     api_key: "${OPENAI_API_KEY}"
     timeout: 300s
     max_output_tokens: 4096

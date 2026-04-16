@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -251,5 +252,17 @@ profiles:
 	}
 	if got := profile.Endpoint; got != defaultCloudflareAPI {
 		t.Fatalf("endpoint = %q, want %q", got, defaultCloudflareAPI)
+	}
+}
+
+func TestTemplateYAMLIncludesProfileMetadataFields(t *testing.T) {
+	template := TemplateYAML()
+	for _, field := range []string{
+		`model_vendor: "openai"`,
+		`inference_provider: "openai"`,
+	} {
+		if !strings.Contains(template, field) {
+			t.Fatalf("TemplateYAML() missing %q\n%s", field, template)
+		}
 	}
 }

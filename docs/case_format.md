@@ -141,4 +141,3 @@ scoring:
 ## References
 
 - [check_reference.md](./check_reference.md)
-- [init_requirement.md](./init_requirement.md)
