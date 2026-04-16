@@ -12,7 +12,11 @@ https://mistermorph.com/llmsnare/arena/
 
 ## Getting Started
 
-### 1. 初始化：
+### 1. 下载最新版 binary
+
+从 [GitHub Releases](https://github.com/quailyquaily/LLMSnare/releases/latest) 下载适合你的操作系统和架构的最新版 binary，并把 `llmsnare` 放进 `PATH`。
+
+### 2. 初始化：
 
 ```bash
 llmsnare init
@@ -20,19 +24,19 @@ llmsnare init
 
 默认会在 `~/.config/llmsnare/` 下生成 config.yaml 和样例 case.
 
-### 2. 修改配置
+### 3. 修改配置
 
 打开 `~/.config/llmsnare/config.yaml`，填好 `config.yaml` 里的 profile 和 API key。
 
 每个 profile 表示一个 LLM。至少需要添加一个 profile。
 
-### 3. 看一下 case
+### 4. 看一下 case
 
 ```bash
 llmsnare cases
 ```
 
-### 4. 跑一次基准测试
+### 5. 跑一次基准测试
 
 ```bash
 llmsnare run --case <case_name>

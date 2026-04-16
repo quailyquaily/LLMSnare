@@ -12,7 +12,11 @@ https://mistermorph.com/llmsnare/arena/
 
 ## Getting Started
 
-### 1. 初期化
+### 1. 最新 binary をダウンロード
+
+[GitHub Releases](https://github.com/quailyquaily/LLMSnare/releases/latest) から自分の OS とアーキテクチャに合った最新版 binary をダウンロードし、`llmsnare` を `PATH` に置いてください。
+
+### 2. 初期化
 
 ```bash
 llmsnare init
@@ -20,19 +24,19 @@ llmsnare init
 
 デフォルトでは `~/.config/llmsnare/` 配下に `config.yaml` とサンプル case が生成されます。
 
-### 2. 設定を編集
+### 3. 設定を編集
 
 `~/.config/llmsnare/config.yaml` を開き、`config.yaml` の profile と API key を埋めてください。
 
 各 profile は 1 つの LLM を表します。最低 1 つの profile を追加する必要があります。
 
-### 3. case を確認
+### 4. case を確認
 
 ```bash
 llmsnare cases
 ```
 
-### 4. benchmark を 1 回実行
+### 5. benchmark を 1 回実行
 
 ```bash
 llmsnare run --case <case_name>

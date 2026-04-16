@@ -12,7 +12,11 @@ https://mistermorph.com/llmsnare/arena/
 
 ## Getting Started
 
-### 1. Initialize
+### 1. Download the latest binary
+
+Download the latest binary for your OS and architecture from [GitHub Releases](https://github.com/quailyquaily/LLMSnare/releases/latest), and put `llmsnare` in your `PATH`.
+
+### 2. Initialize
 
 ```bash
 llmsnare init
@@ -20,19 +24,19 @@ llmsnare init
 
 By default, this generates `config.yaml` and the sample case under `~/.config/llmsnare/`.
 
-### 2. Edit the config
+### 3. Edit the config
 
 Open `~/.config/llmsnare/config.yaml` and fill in the profiles and API keys in `config.yaml`.
 
 Each profile represents one LLM. You need to add at least one profile.
 
-### 3. List the cases
+### 4. List the cases
 
 ```bash
 llmsnare cases
 ```
 
-### 4. Run one benchmark
+### 5. Run one benchmark
 
 ```bash
 llmsnare run --case <case_name>
