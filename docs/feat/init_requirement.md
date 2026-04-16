@@ -83,7 +83,7 @@ llmsnare serve
 建议默认目录：
 
 ```text
-~/.local/state/llmsnare/timeline
+<default_state_dir>/timeline
 ```
 
 每一行表示一次运行结果，至少包含：
@@ -140,7 +140,7 @@ llmsnare init
 默认配置路径：
 
 ```text
-~/.config/llmsnare/config.yaml
+<default_config_dir>/config.yaml
 ```
 
 ---
@@ -150,7 +150,7 @@ llmsnare init
 配置文件放在：
 
 ```text
-~/.config/llmsnare/config.yaml
+<default_config_dir>/config.yaml
 ```
 
 它至少需要能描述下面这些信息：
@@ -175,7 +175,7 @@ serve:
   listen: "127.0.0.1:8787"
 
 storage:
-  timeline_dir: "~/.local/state/llmsnare/timeline"
+  timeline_dir: "./state/timeline"
 
 profiles:
   openai_gpt4o:
@@ -226,7 +226,7 @@ profiles:
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `storage.timeline_dir` | string | 否 | `~/.local/state/llmsnare/timeline` | timeline JSONL 文件保存目录。 |
+| `storage.timeline_dir` | string | 否 | `<default_state_dir>/timeline` | timeline JSONL 文件保存目录。 |
 
 ### `profiles` 字段
 
@@ -251,7 +251,7 @@ profiles:
 如果 `timeline` 目录未配置，系统默认使用：
 
 ```text
-~/.local/state/llmsnare/timeline
+<default_state_dir>/timeline
 ```
 
 ### 字段规则
@@ -270,8 +270,8 @@ profiles:
 
 ### 路径规则
 
-- `~/.config/llmsnare/config.yaml` 中的 `~` 需要展开为当前用户 home 目录。
-- `storage.timeline_dir` 如果以 `~` 开头，也需要做同样的 home 目录展开。
+- 文档里的路径示例统一使用相对路径或占位符，不写死到某台机器的目录。
+- 如果实现里存在平台相关的默认目录，由程序内部决定，不要求文档写出具体宿主路径。
 - timeline 目录不存在时，程序需要自动创建。
 
 ### `llmsnare init` 模板
@@ -285,7 +285,7 @@ serve:
   listen: "127.0.0.1:8787"
 
 storage:
-  timeline_dir: "~/.local/state/llmsnare/timeline"
+  timeline_dir: "./state/timeline"
 
 profiles:
   openai_gpt4o:

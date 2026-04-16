@@ -4,7 +4,7 @@
 
 ## Before You Start
 
-- 使用绝对路径，不要依赖 `cron` 的当前目录。
+- 使用你自己的明确路径或占位变量，不要依赖 `cron` 的当前目录。
 - `run` 需要显式传 `--case`。
 - 如果要保留时间线，带上 `--persist`。
 - `cron` 环境很小。API key 通常放到单独的环境文件里，再在任务里加载。
@@ -30,21 +30,21 @@ crontab -e
 
 ```cron
 MAILTO=""
-PATH=/usr/local/bin:/usr/bin:/bin
+PATH=<bin_dir>:/usr/bin:/bin
 
-0 */6 * * * . /etc/llmsnare/env && /usr/local/bin/llmsnare run openai_gpt4o --config /etc/llmsnare/config.yaml --case read_write_ratio_sample --persist >> /var/log/llmsnare/run.log 2>&1
+0 */6 * * * . <env_file> && <llmsnare_bin> run openai_gpt4o --config <config_file> --case read_write_ratio_sample --persist >> <log_file> 2>&1
 ```
 
 每天凌晨 2:15 跑全部 profile：
 
 ```cron
-15 2 * * * . /etc/llmsnare/env && /usr/local/bin/llmsnare run --config /etc/llmsnare/config.yaml --case read_write_ratio_sample --persist >> /var/log/llmsnare/run.log 2>&1
+15 2 * * * . <env_file> && <llmsnare_bin> run --config <config_file> --case read_write_ratio_sample --persist >> <log_file> 2>&1
 ```
 
 每个小时的第 16 分跑一次单个 profile：
 
 ```cron
-16 * * * * . /etc/llmsnare/env && /usr/local/bin/llmsnare run openai_gpt4o --config /etc/llmsnare/config.yaml --case read_write_ratio_sample --persist >> /var/log/llmsnare/run.log 2>&1
+16 * * * * . <env_file> && <llmsnare_bin> run openai_gpt4o --config <config_file> --case read_write_ratio_sample --persist >> <log_file> 2>&1
 ```
 
 ## Avoid Overlap
@@ -52,25 +52,25 @@ PATH=/usr/local/bin:/usr/bin:/bin
 如果单次运行可能超过调度间隔，建议加锁：
 
 ```cron
-*/30 * * * * . /etc/llmsnare/env && flock -n /var/run/llmsnare.lock /usr/local/bin/llmsnare run gemini_main --config /etc/llmsnare/config.yaml --case read_write_ratio_sample --persist >> /var/log/llmsnare/run.log 2>&1
+*/30 * * * * . <env_file> && flock -n <lock_file> <llmsnare_bin> run gemini_main --config <config_file> --case read_write_ratio_sample --persist >> <log_file> 2>&1
 ```
 
 `flock -n` 拿不到锁就直接退出，避免并发写 timeline。
 
-## `/etc/cron.d` Example
+## System `cron.d` Example
 
-如果你用系统级任务文件，可以放一份到 `/etc/cron.d/llmsnare`。注意这里比用户 crontab 多一个用户字段：
+如果你用系统级任务文件，可以放一份到你自己的 `cron.d` 目录。注意这里比用户 crontab 多一个用户字段：
 
 ```cron
 SHELL=/bin/sh
-PATH=/usr/local/bin:/usr/bin:/bin
+PATH=<bin_dir>:/usr/bin:/bin
 MAILTO=""
 
-0 */6 * * * root . /etc/llmsnare/env && /usr/local/bin/llmsnare run openai_resp_gpt54 --config /etc/llmsnare/config.yaml --case read_write_ratio_sample --persist >> /var/log/llmsnare/run.log 2>&1
+0 */6 * * * root . <env_file> && <llmsnare_bin> run openai_resp_gpt54 --config <config_file> --case read_write_ratio_sample --persist >> <log_file> 2>&1
 ```
 
 ## Quick Checks
 
-- 用 `llmsnare profiles --config /etc/llmsnare/config.yaml` 先确认 profile 名称。
+- 用 `llmsnare profiles --config <config_file>` 先确认 profile 名称。
 - 先手动跑一次 `llmsnare run ...`，确认配置、环境变量和 case 都没问题。
 - 如果没有日志，先检查 `cron` 是否真的加载了环境文件。
