@@ -151,6 +151,34 @@ func TestRebuildProjectionUsesSQLiteAfterReady(t *testing.T) {
 	}
 }
 
+func TestReplaceFileOverwritesExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	dst := filepath.Join(dir, "dst.txt")
+
+	if err := os.WriteFile(src, []byte("new"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+		t.Fatalf("write dst: %v", err)
+	}
+
+	if err := replaceFile(src, dst); err != nil {
+		t.Fatalf("replaceFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read dst: %v", err)
+	}
+	if got := string(data); got != "new" {
+		t.Fatalf("dst contents = %q, want %q", got, "new")
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatalf("src still exists, stat err = %v", err)
+	}
+}
+
 func writeLegacyWAL(t *testing.T, store *Store, profile string, result benchmark.Result) {
 	t.Helper()
 	if err := store.EnsureDir(); err != nil {

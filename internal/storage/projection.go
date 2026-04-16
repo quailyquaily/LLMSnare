@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -205,7 +206,10 @@ func (s *Store) backfillRunIDsForFile(path string) (int, error) {
 	if changed == 0 {
 		return 0, nil
 	}
-	if err := os.Rename(tempPath, path); err != nil {
+	if err := file.Close(); err != nil {
+		return changed, fmt.Errorf("close timeline file: %w", err)
+	}
+	if err := replaceFile(tempPath, path); err != nil {
 		return changed, fmt.Errorf("replace timeline file: %w", err)
 	}
 	cleanupTemp = false
@@ -303,7 +307,7 @@ func (s *Store) RebuildProjection() (ProjectionStats, error) {
 	if err := db.Close(); err != nil {
 		return stats, fmt.Errorf("close sqlite projection: %w", err)
 	}
-	if err := os.Rename(tempPath, s.sqlitePath); err != nil {
+	if err := replaceFile(tempPath, s.sqlitePath); err != nil {
 		return stats, fmt.Errorf("replace sqlite projection: %w", err)
 	}
 	if err := s.clearProjectionDirty(); err != nil {
@@ -345,6 +349,19 @@ func openProjectionDB(path string) (*sql.DB, error) {
 		}
 	}
 	return db, nil
+}
+
+func replaceFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	} else if runtime.GOOS != "windows" {
+		return err
+	}
+
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(src, dst)
 }
 
 func ensureProjectionSchema(db *sql.DB) error {

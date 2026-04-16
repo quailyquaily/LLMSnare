@@ -25,7 +25,7 @@ func TestTimelineStatusCommandShowsSQLiteBackend(t *testing.T) {
 	timelineDir := filepath.Join(root, "timeline")
 	if err := os.WriteFile(configPath, []byte(`version: 1
 storage:
-  timeline_dir: "`+timelineDir+`"
+  timeline_dir: "`+filepath.ToSlash(timelineDir)+`"
 profiles:
   demo:
     provider: openai
