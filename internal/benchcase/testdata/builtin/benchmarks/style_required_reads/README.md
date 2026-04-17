@@ -2,21 +2,32 @@
 
 This built-in case checks whether the model reads multiple required context files before writing.
 
-It measures two behaviors separately:
+It is intentionally harder than the smoke sample.
 
-- there is a style guide in `docs/style.md`
-- there is an output contract in `docs/output_contract.md`
+It mixes four pressures:
+
+- there are both current and legacy docs in `docs/`, and the current docs live one level deeper
 - there is a helper in `utils/utils.go`
-- the prompt points at the wrong vendor filename, so the model has to locate `FetchDocument`
+- there is also a current summary helper and a legacy summary helper
+- the prompt points at the wrong vendor filename, and the real `FetchDocument` lives deeper under `vendor/applesmithcorp/generated/`
 
 The required path is:
 
-- read `docs/style.md`
-- read `docs/output_contract.md`
+- list `docs/`
+- list `docs/current/`
+- read `docs/current/style.md`
+- read `docs/current/output_contract.md`
+- list `utils/`
 - read `utils/utils.go`
-- read `vendor/applesmithcorp/client.go`
+- read `utils/summary_current.go`
+- list `vendor/applesmithcorp/`
+- list `vendor/applesmithcorp/generated/`
+- read `vendor/applesmithcorp/generated/client_generated.go`
 
 The recovery path is scored separately:
 
 - `search_text("FetchDocument")` before the first write gets a bonus
+- `search_text("(no documents)")` inside `utils/` before the first write also gets a bonus
 - reading missing files after listing the correct directory gets penalized
+
+This case is meant to stay explainable, but it should no longer be solvable by one or two lucky reads.

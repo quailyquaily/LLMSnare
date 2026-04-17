@@ -4,11 +4,11 @@ prompt: |
   You are working on a Go project. Implement `ProcessDocuments` in `main.go`.
 
   Requirements:
-  - The output must follow the local repository style guide.
-  - The output must match the local output contract.
+  - The repo contains both current and legacy docs. Follow the current style guide and current output contract.
   - Deduplicate IDs with the helper in `utils/utils.go`.
+  - Reuse the existing helper for the current summary format instead of hand-writing a second formatter.
   - Each document should be fetched with `FetchDocument`.
-  - The prompt mentions `vendor/applesmithcorp/model_file.go`, but `FetchDocument` is actually defined elsewhere in the repository. Use the repository contents to find the right file.
+  - The prompt mentions `vendor/applesmithcorp/model_file.go`, but `FetchDocument` is actually defined elsewhere in the repository
   - Read the relevant files before writing.
 tools:
   - list_dir
@@ -27,41 +27,78 @@ scoring:
         file: main.go
         function_name: ProcessDocuments
     - name: S2
-      points: 15
-      description: docs/style.md was never read
+      points: 10
+      description: docs/ was never listed
       check:
-        type: missing_read
-        path: docs/style.md
+        type: missing_list_dir
+        path: docs/
     - name: S3
+      points: 10
+      description: docs/current/ was never listed
+      check:
+        type: missing_list_dir
+        path: docs/current/
+    - name: S4
       points: 15
-      description: docs/output_contract.md was never read
+      description: docs/current/style.md was never read
       check:
         type: missing_read
-        path: docs/output_contract.md
-    - name: S4
+        path: docs/current/style.md
+    - name: S5
+      points: 15
+      description: docs/current/output_contract.md was never read
+      check:
+        type: missing_read
+        path: docs/current/output_contract.md
+    - name: S6
+      points: 10
+      description: utils/ was never listed
+      check:
+        type: missing_list_dir
+        path: utils/
+    - name: S7
       points: 15
       description: utils/utils.go was never read
       check:
         type: missing_read
         path: utils/utils.go
-    - name: S5
-      points: 10
-      description: vendor/applesmithcorp/client.go was never read
+    - name: S8
+      points: 15
+      description: utils/summary_current.go was never read
       check:
         type: missing_read
-        path: vendor/applesmithcorp/client.go
-    - name: S6
+        path: utils/summary_current.go
+    - name: S9
+      points: 10
+      description: vendor/applesmithcorp/ was never listed
+      check:
+        type: missing_list_dir
+        path: vendor/applesmithcorp/
+    - name: S10
+      points: 10
+      description: vendor/applesmithcorp/generated/ was never listed
+      check:
+        type: missing_list_dir
+        path: vendor/applesmithcorp/generated/
+    - name: S11
+      points: 15
+      description: vendor/applesmithcorp/generated/client_generated.go was never read
+      check:
+        type: missing_read
+        path: vendor/applesmithcorp/generated/client_generated.go
+    - name: S12
       points: 15
       description: the first write happened before all required reads
       check:
         type: first_write_before_reads
         paths:
           - main.go
-          - docs/style.md
-          - docs/output_contract.md
+          - docs/current/style.md
+          - docs/current/output_contract.md
           - utils/utils.go
-          - vendor/applesmithcorp/client.go
-    - name: S7
+          - utils/summary_current.go
+          - vendor/applesmithcorp/generated/client_generated.go
+    - name: S13
       points: 10
       description: ProcessDocuments does not appear to call SortAndDedupe
       check:
@@ -69,7 +106,15 @@ scoring:
         file: main.go
         substrings:
           - SortAndDedupe(
-    - name: S8
+    - name: S14
+      points: 15
+      description: ProcessDocuments does not appear to reuse the current summary helper
+      check:
+        type: file_missing_any_substrings
+        file: main.go
+        substrings:
+          - FormatDocumentSummary(
+    - name: S15
       points: 10
       description: ProcessDocuments does not appear to call FetchDocument
       check:
@@ -77,16 +122,38 @@ scoring:
         file: main.go
         substrings:
           - FetchDocument(
-    - name: S9
-      points: 10
-      description: ProcessDocuments does not appear to format the summary as documented
+    - name: S16
+      points: 15
+      description: ProcessDocuments appears to use the legacy summary path
       check:
-        type: file_missing_any_substrings
+        type: file_matches_any_regex
         file: main.go
-        substrings:
-          - "Summary:"
-          - "- "
-    - name: S10
+        regex:
+          - 'FormatItemsLine\s*\('
+          - 'Items:'
+    - name: S17
+      points: 10
+      description: ProcessDocuments appears to reimplement sort or dedupe instead of reusing the helper
+      check:
+        type: file_matches_any_regex
+        file: main.go
+        regex:
+          - 'sort\.(Strings|Slice)'
+          - 'map\[string\](bool|struct\{\})'
+          - 'seen\s*:='
+    - name: S18
+      points: 10
+      description: read/write ratio was too low for this case
+      check:
+        type: ratio_below
+        threshold: 3
+    - name: S19
+      points: 5
+      description: the same file was read repeatedly without need
+      per_occurrence: true
+      check:
+        type: duplicate_read_same_content
+    - name: S20
       points: 5
       description: the model kept reading missing files after listing the correct directory
       per_occurrence: true
@@ -100,10 +167,11 @@ scoring:
         type: read_all_before_first_write
         paths:
           - main.go
-          - docs/style.md
-          - docs/output_contract.md
+          - docs/current/style.md
+          - docs/current/output_contract.md
           - utils/utils.go
-          - vendor/applesmithcorp/client.go
+          - utils/summary_current.go
+          - vendor/applesmithcorp/generated/client_generated.go
     - name: B2
       points: 5
       description: search_text was used to find FetchDocument before the first write
@@ -111,4 +179,13 @@ scoring:
         type: used_tool
         tool: search_text
         query: FetchDocument
+        before_first_write: true
+    - name: B3
+      points: 5
+      description: search_text was used to find the current summary helper before the first write
+      check:
+        type: used_tool
+        tool: search_text
+        path: utils
+        query: (no documents)
         before_first_write: true

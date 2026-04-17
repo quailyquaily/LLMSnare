@@ -1,9 +1,7 @@
 package applesmithcorp
 
-type Document struct {
-	ID string
-}
+type Client struct{}
 
-func FetchDocument(id string) Document {
-	return Document{ID: id}
+func NewClient() *Client {
+	return &Client{}
 }

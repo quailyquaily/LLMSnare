@@ -28,34 +28,20 @@ func newInitCommand() *cobra.Command {
 				return err
 			}
 
-			if !force {
-				if err := ensureMissing(target); err != nil {
-					return err
-				}
-				for _, scaffold := range scaffolds {
-					casePath := filepath.Join(filepath.Dir(target), filepath.FromSlash(scaffold.CaseRelPath))
-					if err := ensureMissing(casePath); err != nil {
-						return err
-					}
-				}
-			}
-
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return fmt.Errorf("create config directory: %w", err)
-			}
-			if err := os.WriteFile(target, []byte(config.TemplateYAML()), 0o644); err != nil {
+			configWritten, err := writeInitFile(target, []byte(config.TemplateYAML()), force)
+			if err != nil {
 				return fmt.Errorf("write config template: %w", err)
 			}
-			written, err := writeDefaultCaseScaffolds(filepath.Dir(target), scaffolds)
+			results, err := writeDefaultCaseScaffolds(filepath.Dir(target), scaffolds, force)
 			if err != nil {
 				return err
 			}
 
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", target); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", initAction(configWritten), target); err != nil {
 				return err
 			}
-			for _, path := range written {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", path); err != nil {
+			for _, result := range results {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", initAction(result.Written), result.Path); err != nil {
 					return err
 				}
 			}
@@ -63,41 +49,60 @@ func newInitCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite an existing config file")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing config and built-in benchmark files")
 	return cmd
 }
 
-func ensureMissing(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("%s already exists; rerun with --force to overwrite", path)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat %s: %w", path, err)
-	}
-	return nil
+type initWriteResult struct {
+	Path    string
+	Written bool
 }
 
-func writeDefaultCaseScaffolds(root string, scaffolds []benchcase.Scaffold) ([]string, error) {
-	written := make([]string, 0, len(scaffolds))
+func initAction(written bool) string {
+	if written {
+		return "wrote"
+	}
+	return "skipped"
+}
+
+func writeInitFile(path string, content []byte, force bool) (bool, error) {
+	if !force {
+		if _, err := os.Stat(path); err == nil {
+			return false, nil
+		} else if !os.IsNotExist(err) {
+			return false, fmt.Errorf("stat %s: %w", path, err)
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, fmt.Errorf("create parent directory for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return false, fmt.Errorf("write %s: %w", path, err)
+	}
+	return true, nil
+}
+
+func writeDefaultCaseScaffolds(root string, scaffolds []benchcase.Scaffold, force bool) ([]initWriteResult, error) {
+	results := make([]initWriteResult, 0, len(scaffolds))
 	for _, scaffold := range scaffolds {
 		casePath := filepath.Join(root, filepath.FromSlash(scaffold.CaseRelPath))
-		if err := os.MkdirAll(filepath.Dir(casePath), 0o755); err != nil {
-			return nil, fmt.Errorf("create benchmark case directory: %w", err)
-		}
-		if err := os.WriteFile(casePath, []byte(scaffold.CaseYAML), 0o644); err != nil {
+		wroteCase, err := writeInitFile(casePath, []byte(scaffold.CaseYAML), force)
+		if err != nil {
 			return nil, fmt.Errorf("write benchmark case: %w", err)
 		}
 
 		rootFSDir := filepath.Join(filepath.Dir(casePath), benchcase.DefaultRootFSRelDir())
 		for relPath, content := range scaffold.RootFSFiles {
 			target := filepath.Join(rootFSDir, filepath.FromSlash(relPath))
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return nil, fmt.Errorf("create rootfs directory: %w", err)
-			}
-			if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+			if _, err := writeInitFile(target, []byte(content), force); err != nil {
 				return nil, fmt.Errorf("write rootfs file: %w", err)
 			}
 		}
-		written = append(written, casePath)
+		results = append(results, initWriteResult{
+			Path:    casePath,
+			Written: wroteCase,
+		})
 	}
-	return written, nil
+	return results, nil
 }
