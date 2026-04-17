@@ -24,9 +24,10 @@ import (
 const maxRounds = 24
 
 var (
-	errToolArgs     = errors.New("invalid tool arguments")
-	readToolSchema  = []byte(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)
-	writeToolSchema = []byte(`{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}`)
+	errToolArgs      = errors.New("invalid tool arguments")
+	readToolSchema   = []byte(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)
+	writeToolSchema  = []byte(`{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}`)
+	searchToolSchema = []byte(`{"type":"object","properties":{"query":{"type":"string"},"path":{"type":"string"}},"required":["query"]}`)
 )
 
 type ChatClient interface {
@@ -192,7 +193,7 @@ func (r *Runner) RunWithClient(ctx context.Context, caseDef benchcase.Case, prof
 	startedAt := time.Now().UTC()
 	fs := newVirtualFS(caseDef, startedAt)
 	messages := []uniai.Message{uniai.User(caseDef.Prompt)}
-	tools := buildTools()
+	tools := buildTools(caseDef.Tools)
 
 	result := Result{
 		Timestamp:         startedAt,
@@ -388,6 +389,8 @@ func geminiToolResultValue(toolName string, reply toolResponse) any {
 		return map[string]any{"content": fmt.Sprint(reply.result)}
 	case "write_file":
 		return map[string]any{"status": fmt.Sprint(reply.result)}
+	case "search_text":
+		return map[string]any{"matches": reply.result}
 	default:
 		return reply.result
 	}
@@ -431,12 +434,21 @@ func failureResult(caseID, profileName string, profile config.Profile, err error
 	}
 }
 
-func buildTools() []uniai.Tool {
-	return []uniai.Tool{
-		uniai.FunctionTool("list_dir", "List files in a mock directory", readToolSchema),
-		uniai.FunctionTool("read_file", "Read a mock file", readToolSchema),
-		uniai.FunctionTool("write_file", "Write a mock file", writeToolSchema),
+func buildTools(names []string) []uniai.Tool {
+	tools := make([]uniai.Tool, 0, len(names))
+	for _, name := range names {
+		switch name {
+		case benchcase.ToolListDir:
+			tools = append(tools, uniai.FunctionTool(benchcase.ToolListDir, "List files in a mock directory", readToolSchema))
+		case benchcase.ToolReadFile:
+			tools = append(tools, uniai.FunctionTool(benchcase.ToolReadFile, "Read a mock file", readToolSchema))
+		case benchcase.ToolWriteFile:
+			tools = append(tools, uniai.FunctionTool(benchcase.ToolWriteFile, "Write a mock file", writeToolSchema))
+		case benchcase.ToolSearchText:
+			tools = append(tools, uniai.FunctionTool(benchcase.ToolSearchText, "Search file contents in the mock repository", searchToolSchema))
+		}
 	}
+	return tools
 }
 
 func newClient(profile config.Profile) (ChatClient, error) {
@@ -474,6 +486,12 @@ type virtualFS struct {
 	logs  []ToolCallLog
 	seq   int
 	now   time.Time
+}
+
+type searchMatch struct {
+	Path       string `json:"path"`
+	LineNumber int    `json:"line_number"`
+	Line       string `json:"line"`
 }
 
 func newVirtualFS(caseDef benchcase.Case, start time.Time) *virtualFS {
@@ -520,6 +538,17 @@ func (v *virtualFS) execute(name, argsJSON string) toolResponse {
 		content := stringValue(input["content"])
 		v.files[filePath] = content
 		return v.record(name, input, toolResponse{result: "ok", modelOutput: "ok"})
+	case "search_text":
+		query := stringValue(input["query"])
+		scope := stringValue(input["path"])
+		matches, ok := v.search(query, scope)
+		if !ok {
+			target := normalizeSearchScope(scope)
+			msg := fmt.Sprintf("error: path %q not found", target)
+			return v.record(name, input, toolResponse{result: msg, modelOutput: msg, isError: true})
+		}
+		payload, _ := json.Marshal(matches)
+		return v.record(name, input, toolResponse{result: matches, modelOutput: string(payload)})
 	default:
 		msg := fmt.Sprintf("error: unsupported tool %q", name)
 		return v.record(name, input, toolResponse{result: msg, modelOutput: msg, isError: true})
@@ -581,6 +610,62 @@ func (v *virtualFS) list(dir string) ([]string, bool) {
 	}
 	sort.Strings(entries)
 	return entries, true
+}
+
+func (v *virtualFS) search(query, scope string) ([]searchMatch, bool) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, false
+	}
+
+	paths, ok := v.searchScopePaths(scope)
+	if !ok {
+		return nil, false
+	}
+
+	matches := make([]searchMatch, 0)
+	for _, filePath := range paths {
+		lines := strings.Split(v.files[filePath], "\n")
+		for i, line := range lines {
+			if !strings.Contains(line, query) {
+				continue
+			}
+			matches = append(matches, searchMatch{
+				Path:       filePath,
+				LineNumber: i + 1,
+				Line:       line,
+			})
+		}
+	}
+	return matches, true
+}
+
+func (v *virtualFS) searchScopePaths(scope string) ([]string, bool) {
+	target := normalizeSearchScope(scope)
+	if target == "." {
+		paths := make([]string, 0, len(v.files))
+		for filePath := range v.files {
+			paths = append(paths, filePath)
+		}
+		sort.Strings(paths)
+		return paths, true
+	}
+	if _, ok := v.files[target]; ok {
+		return []string{target}, true
+	}
+
+	prefix := target + "/"
+	paths := make([]string, 0)
+	for filePath := range v.files {
+		if strings.HasPrefix(filePath, prefix) {
+			paths = append(paths, filePath)
+		}
+	}
+	if len(paths) == 0 {
+		return nil, false
+	}
+	sort.Strings(paths)
+	return paths, true
 }
 
 func (v *virtualFS) finalWrites() map[string]string {
@@ -838,6 +923,10 @@ func evaluateCheck(ctx evaluationContext, check benchcase.Check) []string {
 		if !goFileDefinesFunction(ctx.fileContent(check.File), check.FunctionName) {
 			return []string{fmt.Sprintf("%s does not define function %s", check.File, check.FunctionName)}
 		}
+	case "used_tool":
+		if usedTool(ctx.fs.logs, check) {
+			return []string{usedToolDescription(check)}
+		}
 	}
 	return nil
 }
@@ -1031,6 +1120,79 @@ func goFileDefinesFunction(source, functionName string) bool {
 	return false
 }
 
+func usedTool(logs []ToolCallLog, check benchcase.Check) bool {
+	firstWrite := 0
+	if check.BeforeFirstWrite {
+		firstWrite = firstSuccessfulWriteSequence(logs)
+		if firstWrite == 0 {
+			return false
+		}
+	}
+
+	for _, log := range logs {
+		if firstWrite != 0 && log.Sequence >= firstWrite {
+			return false
+		}
+		if log.IsError || log.Tool != check.Tool {
+			continue
+		}
+		if !toolInputPathMatches(log, check.Path) {
+			continue
+		}
+		if !toolInputQueryMatches(log, check.Query) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func firstSuccessfulWriteSequence(logs []ToolCallLog) int {
+	for _, log := range logs {
+		if log.Tool == "write_file" && !log.IsError {
+			return log.Sequence
+		}
+	}
+	return 0
+}
+
+func toolInputPathMatches(log ToolCallLog, expected string) bool {
+	if expected == "" {
+		return true
+	}
+
+	actual := stringValue(log.Input["path"])
+	switch log.Tool {
+	case "list_dir":
+		return normalizeDir(actual) == normalizeDir(expected)
+	case "search_text":
+		return normalizeSearchScope(actual) == normalizeSearchScope(expected)
+	default:
+		return normalizeFile(actual) == normalizeFile(expected)
+	}
+}
+
+func toolInputQueryMatches(log ToolCallLog, expected string) bool {
+	if expected == "" {
+		return true
+	}
+	return strings.TrimSpace(stringValue(log.Input["query"])) == strings.TrimSpace(expected)
+}
+
+func usedToolDescription(check benchcase.Check) string {
+	parts := []string{fmt.Sprintf("%s was used", check.Tool)}
+	if check.Path != "" {
+		parts = append(parts, fmt.Sprintf("path=%s", check.Path))
+	}
+	if check.Query != "" {
+		parts = append(parts, fmt.Sprintf("query=%s", check.Query))
+	}
+	if check.BeforeFirstWrite {
+		parts = append(parts, "before first write")
+	}
+	return strings.Join(parts, ", ")
+}
+
 func hasSuccessfulListDir(logs []ToolCallLog, dir string) bool {
 	target := normalizeDir(dir)
 	for _, log := range logs {
@@ -1074,6 +1236,14 @@ func normalizeFile(value string) string {
 	cleaned := path.Clean(strings.TrimSpace(value))
 	if cleaned == "." {
 		return ""
+	}
+	return cleaned
+}
+
+func normalizeSearchScope(value string) string {
+	cleaned := path.Clean(strings.TrimSpace(value))
+	if cleaned == "." || cleaned == "/" || cleaned == "" {
+		return "."
 	}
 	return cleaned
 }

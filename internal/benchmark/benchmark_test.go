@@ -144,6 +144,110 @@ func TestVirtualFSListDirSupportsRootAndDirectories(t *testing.T) {
 	}
 }
 
+func TestVirtualFSSearchTextSupportsRootFileAndDirectoryScopes(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	fs := newVirtualFS(caseDef, nowForTest())
+
+	matches, ok := fs.search("SortAndDedupe", "")
+	if !ok {
+		t.Fatal(`search("", "SortAndDedupe") = not found, want matches`)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("root search matches = %d, want 2 (%#v)", len(matches), matches)
+	}
+
+	fileMatches, ok := fs.search("SortAndDedupe", "utils/utils.go")
+	if !ok {
+		t.Fatal(`search("utils/utils.go", "SortAndDedupe") = not found, want matches`)
+	}
+	if len(fileMatches) != 2 {
+		t.Fatalf("file search matches = %d, want 2 (%#v)", len(fileMatches), fileMatches)
+	}
+	if got := fileMatches[0].Path; got != "utils/utils.go" {
+		t.Fatalf("first file match path = %q, want %q", got, "utils/utils.go")
+	}
+
+	dirMatches, ok := fs.search("FetchDocument", "vendor")
+	if !ok {
+		t.Fatal(`search("vendor", "FetchDocument") = not found, want matches`)
+	}
+	if len(dirMatches) != 2 {
+		t.Fatalf("dir search matches = %d, want 2 (%#v)", len(dirMatches), dirMatches)
+	}
+	if got := dirMatches[0].Path; got != "vendor/applesmithcorp/model_document.go" {
+		t.Fatalf("dir search path = %q, want %q", got, "vendor/applesmithcorp/model_document.go")
+	}
+}
+
+func TestVirtualFSSearchTextReportsMissingScope(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	fs := newVirtualFS(caseDef, nowForTest())
+
+	reply := fs.execute("search_text", `{"path":"missing","query":"SortAndDedupe"}`)
+	if !reply.isError {
+		t.Fatalf("execute search_text returned %#v, want error", reply.result)
+	}
+}
+
+func TestUsedToolMatchesSearchTextBeforeFirstWrite(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	fs := newVirtualFS(caseDef, nowForTest())
+	fs.execute("read_file", `{"path":"main.go"}`)
+	fs.execute("search_text", `{"query":"FetchDocument","path":"vendor"}`)
+	fs.execute("write_file", `{"path":"main.go","content":"package main\n"}`)
+
+	ctx := buildEvaluationContext(caseDef, Result{FinalWrites: fs.finalWrites()}, fs)
+	check := benchcase.Check{
+		Type:             "used_tool",
+		Tool:             benchcase.ToolSearchText,
+		Query:            "FetchDocument",
+		BeforeFirstWrite: true,
+	}
+
+	got := evaluateCheck(ctx, check)
+	if len(got) != 1 {
+		t.Fatalf("matches = %#v, want one match", got)
+	}
+}
+
+func TestUsedToolSkipsSearchTextAfterFirstWrite(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	fs := newVirtualFS(caseDef, nowForTest())
+	fs.execute("write_file", `{"path":"main.go","content":"package main\n"}`)
+	fs.execute("search_text", `{"query":"FetchDocument","path":"vendor"}`)
+
+	ctx := buildEvaluationContext(caseDef, Result{FinalWrites: fs.finalWrites()}, fs)
+	check := benchcase.Check{
+		Type:             "used_tool",
+		Tool:             benchcase.ToolSearchText,
+		Query:            "FetchDocument",
+		BeforeFirstWrite: true,
+	}
+
+	got := evaluateCheck(ctx, check)
+	if len(got) != 0 {
+		t.Fatalf("matches = %#v, want none", got)
+	}
+}
+
+func TestUsedToolMatchesListDirPath(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	fs := newVirtualFS(caseDef, nowForTest())
+	fs.execute("list_dir", `{"path":"./vendor/applesmithcorp/"}`)
+
+	ctx := buildEvaluationContext(caseDef, Result{}, fs)
+	check := benchcase.Check{
+		Type: "used_tool",
+		Tool: benchcase.ToolListDir,
+		Path: "vendor/applesmithcorp",
+	}
+
+	got := evaluateCheck(ctx, check)
+	if len(got) != 1 {
+		t.Fatalf("matches = %#v, want one match", got)
+	}
+}
+
 func TestMissingFileReadsAfterListDirMatchesListedParentDir(t *testing.T) {
 	logs := []ToolCallLog{
 		{

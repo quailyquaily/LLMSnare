@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"sort"
+	"strings"
 )
 
 //go:embed testdata/builtin/benchmarks
@@ -17,8 +19,9 @@ type Scaffold struct {
 }
 
 func DefaultScaffolds() ([]Scaffold, error) {
-	casePaths := []string{
-		BuiltinCaseRelPath,
+	casePaths, err := builtinCasePaths()
+	if err != nil {
+		return nil, err
 	}
 
 	scaffolds := make([]Scaffold, 0, len(casePaths))
@@ -30,6 +33,27 @@ func DefaultScaffolds() ([]Scaffold, error) {
 		scaffolds = append(scaffolds, scaffold)
 	}
 	return scaffolds, nil
+}
+
+func builtinCasePaths() ([]string, error) {
+	const root = "testdata/builtin/benchmarks"
+
+	var casePaths []string
+	err := fs.WalkDir(builtinFS, root, func(current string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || path.Base(current) != "case.yaml" {
+			return nil
+		}
+		casePaths = append(casePaths, strings.TrimPrefix(current, "testdata/builtin/"))
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list embedded cases: %w", err)
+	}
+	sort.Strings(casePaths)
+	return casePaths, nil
 }
 
 func loadEmbeddedScaffold(caseRelPath string) (Scaffold, error) {

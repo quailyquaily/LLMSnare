@@ -31,13 +31,16 @@ check:
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `type` | string | check 类型，必填。 |
+| `tool` | string | 目标工具名。 |
 | `path` | string | 单个目标路径。 |
 | `paths` | array[string] | 多个目标路径。 |
 | `file` | string | 要检查内容的文件路径。 |
 | `function_name` | string | 要检查的函数名。 |
+| `query` | string | 工具调用里的查询词，目前用于 `search_text`。 |
 | `regex` | array[string] | 正则模式列表，具体语义由 `type` 决定。 |
 | `threshold` | number | 数值阈值。 |
 | `substrings` | array[string] | 要同时匹配的子串。 |
+| `before_first_write` | bool | 是否要求该行为发生在第一次成功写入之前。 |
 
 ## Check Types
 
@@ -58,6 +61,7 @@ check:
 | `file_matches_all_regex` | 检查文件内容是否匹配全部正则模式 | `file`, `regex` |
 | `file_matches_any_regex` | 检查文件内容是否匹配任意一个正则模式 | `file`, `regex` |
 | `missing_go_function` | 检查 Go 文件里是否真的定义了指定顶层函数 | `file`, `function_name` |
+| `used_tool` | 检查某个工具调用是否出现过 | `tool`, `path`, `query`, `before_first_write` |
 
 ## Minimal Examples
 
@@ -193,4 +197,14 @@ check:
   type: missing_go_function
   file: main.go
   function_name: BuildStatus
+```
+
+### `used_tool`
+
+```yaml
+check:
+  type: used_tool
+  tool: search_text
+  query: FetchDocument
+  before_first_write: true
 ```

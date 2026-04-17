@@ -124,7 +124,12 @@ benchmarks/
 
 ### 内蔵 Case
 
-内蔵 case は最も単純なサンプルです。`llmsnare init` はこの内蔵 case を `~/.config/llmsnare/benchmarks/` 配下へコピーするので、その sample を元に自由に修正できます。
+`llmsnare init` は複数の内蔵 case を `~/.config/llmsnare/benchmarks/` 配下へコピーします。
+
+現在の内蔵 case:
+
+- `read_write_ratio_sample`
+- `style_required_reads`
 
 ## HTTP API
 

@@ -8,6 +8,10 @@ prompt: |
   - Match any existing formatting convention you find in the codebase.
 
   Use the provided tools to read files before writing.
+tools:
+  - list_dir
+  - read_file
+  - write_file
 writable_paths:
   - main.go
 scoring:

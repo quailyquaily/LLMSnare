@@ -17,12 +17,17 @@ const (
 	DefaultCasesRelDir  = "benchmarks"
 	BuiltinCaseRelPath  = DefaultCasesRelDir + "/" + BuiltinCaseID + "/case.yaml"
 	defaultRootFSRelDir = "rootfs"
+	ToolListDir         = "list_dir"
+	ToolReadFile        = "read_file"
+	ToolWriteFile       = "write_file"
+	ToolSearchText      = "search_text"
 )
 
 type Case struct {
 	Version       int               `yaml:"version"`
 	ID            string            `yaml:"id"`
 	Prompt        string            `yaml:"prompt"`
+	Tools         []string          `yaml:"tools"`
 	WritablePaths []string          `yaml:"writable_paths"`
 	Scoring       Scoring           `yaml:"scoring"`
 	Dir           string            `yaml:"-"`
@@ -56,14 +61,17 @@ type Rule struct {
 }
 
 type Check struct {
-	Type         string   `yaml:"type"`
-	Path         string   `yaml:"path"`
-	Paths        []string `yaml:"paths"`
-	File         string   `yaml:"file"`
-	FunctionName string   `yaml:"function_name"`
-	Regex        []string `yaml:"regex"`
-	Threshold    float64  `yaml:"threshold"`
-	Substrings   []string `yaml:"substrings"`
+	Type             string   `yaml:"type"`
+	Tool             string   `yaml:"tool"`
+	Path             string   `yaml:"path"`
+	Paths            []string `yaml:"paths"`
+	File             string   `yaml:"file"`
+	FunctionName     string   `yaml:"function_name"`
+	Query            string   `yaml:"query"`
+	Regex            []string `yaml:"regex"`
+	Threshold        float64  `yaml:"threshold"`
+	Substrings       []string `yaml:"substrings"`
+	BeforeFirstWrite bool     `yaml:"before_first_write"`
 }
 
 func LoadDir(caseDir string) (Case, error) {
@@ -168,6 +176,11 @@ func (c *Case) normalize() error {
 		return err
 	}
 	c.RootFSFiles = files
+	tools, err := normalizeTools(c.Tools)
+	if err != nil {
+		return err
+	}
+	c.Tools = tools
 	c.WritablePaths = normalizePaths(c.WritablePaths)
 	if err := normalizeRules(c.Scoring.Deductions); err != nil {
 		return err
@@ -176,6 +189,50 @@ func (c *Case) normalize() error {
 		return err
 	}
 	return nil
+}
+
+func DefaultTools() []string {
+	return []string{
+		ToolListDir,
+		ToolReadFile,
+		ToolWriteFile,
+	}
+}
+
+func normalizeTools(items []string) ([]string, error) {
+	if len(items) == 0 {
+		return DefaultTools(), nil
+	}
+
+	seen := make(map[string]bool, len(items))
+	tools := make([]string, 0, len(items))
+	for _, item := range items {
+		name := strings.TrimSpace(item)
+		if name == "" {
+			continue
+		}
+		if !isSupportedTool(name) {
+			return nil, fmt.Errorf("unsupported tool %q", name)
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		tools = append(tools, name)
+	}
+	if len(tools) == 0 {
+		return nil, fmt.Errorf("case tools must not be empty")
+	}
+	return tools, nil
+}
+
+func isSupportedTool(name string) bool {
+	switch name {
+	case ToolListDir, ToolReadFile, ToolWriteFile, ToolSearchText:
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeRules(rules []Rule) error {
@@ -189,9 +246,11 @@ func normalizeRules(rules []Rule) error {
 }
 
 func (c *Check) normalize() {
+	c.Tool = strings.TrimSpace(c.Tool)
 	c.Path = normalizeRelPath(c.Path)
 	c.File = normalizeRelPath(c.File)
 	c.Paths = normalizePaths(c.Paths)
+	c.Query = strings.TrimSpace(c.Query)
 }
 
 func normalizePaths(paths []string) []string {

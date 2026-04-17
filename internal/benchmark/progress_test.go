@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 
+	"llmsnare/internal/benchcase"
 	"llmsnare/internal/config"
 
 	"github.com/quailyquaily/uniai"
@@ -236,6 +238,38 @@ func TestRunWithClientDisablesToolEmulationFallbackForOpenAI(t *testing.T) {
 	}
 	if got := client.reqs[0].Options.ToolsEmulationMode; got != uniai.ToolsEmulationOff {
 		t.Fatalf("tools emulation mode = %q, want %q", got, uniai.ToolsEmulationOff)
+	}
+}
+
+func TestRunWithClientUsesCaseTools(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	caseDef.Tools = []string{
+		benchcase.ToolSearchText,
+		benchcase.ToolReadFile,
+		benchcase.ToolWriteFile,
+	}
+	client := &recordingChatClient{}
+
+	_, err := NewRunner().RunWithClient(
+		context.Background(),
+		caseDef,
+		"openai_profile",
+		config.Profile{Provider: "openai", Model: "gpt-4o"},
+		client,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.reqs) == 0 {
+		t.Fatal("expected at least one chat request")
+	}
+
+	var got []string
+	for _, tool := range client.reqs[0].Tools {
+		got = append(got, tool.Function.Name)
+	}
+	if !reflect.DeepEqual(got, caseDef.Tools) {
+		t.Fatalf("tools = %#v, want %#v", got, caseDef.Tools)
 	}
 }
 

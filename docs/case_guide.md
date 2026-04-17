@@ -27,6 +27,8 @@ Examples:
 
 If one case is trying to measure all of these at once, the score will be hard to interpret.
 
+Also keep the exposed tool set small. If a case only needs `read_file` and `write_file`, do not expose extra tools just because the runner supports them.
+
 Concrete example:
 
 - target behavior: read the style guide before rewriting text
@@ -203,12 +205,13 @@ Good rule ideas:
 ## Recommended Author Workflow
 
 1. Pick one target behavior.
-2. Create the smallest `rootfs/` that can expose it.
-3. Write the prompt.
-4. Set `writable_paths`.
-5. Add a minimal scoring block.
-6. Run the case multiple times.
-7. Tighten the tree or rules until the result is easy to explain.
+2. Choose the smallest tool set that can expose it.
+3. Create the smallest `rootfs/` that can expose it.
+4. Write the prompt.
+5. Set `writable_paths`.
+6. Add a minimal scoring block.
+7. Run the case multiple times.
+8. Tighten the tree or rules until the result is easy to explain.
 
 ## Common Failure Modes
 

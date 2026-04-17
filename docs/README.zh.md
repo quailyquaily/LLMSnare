@@ -122,7 +122,12 @@ benchmarks/
 
 ### 内置 Case
 
-内置 case 提供了最简单的用例。`llmsnare init` 会把这个内置 case 复制到磁盘 `~/.config/llmsnare/benchmarks/`，可以基于这个 sample 自由修改。
+`llmsnare init` 会把多组内置 case 复制到 `~/.config/llmsnare/benchmarks/`。
+
+当前内置 case：
+
+- `read_write_ratio_sample`
+- `style_required_reads`
 
 ## HTTP API
 

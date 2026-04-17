@@ -124,7 +124,12 @@ See [check_reference.md](./docs/check_reference.md) for supported `check.type` v
 
 ### Built-In Cases
 
-The built-in case is the simplest sample. `llmsnare init` copies this built-in case to disk under `~/.config/llmsnare/benchmarks/`, and you can modify it freely based on that sample.
+`llmsnare init` copies several built-in cases to `~/.config/llmsnare/benchmarks/`.
+
+Current built-ins:
+
+- `read_write_ratio_sample`
+- `style_required_reads`
 
 ## HTTP API
 

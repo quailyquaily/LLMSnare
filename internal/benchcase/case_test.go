@@ -21,6 +21,9 @@ func TestLoadDirReadsRootFS(t *testing.T) {
 	if got := caseDef.RootFSFiles["main.go"]; got == "" {
 		t.Fatal("expected main.go rootfs content")
 	}
+	if want := DefaultTools(); !reflect.DeepEqual(caseDef.Tools, want) {
+		t.Fatalf("tools = %#v, want %#v", caseDef.Tools, want)
+	}
 }
 
 func TestListIncludesDefaultCase(t *testing.T) {
@@ -178,6 +181,118 @@ scoring:
 	if got := caseDef.RootFSFiles["main.go"]; got != "package main\n" {
 		t.Fatalf("rootfs main.go = %q, want %q", got, "package main\n")
 	}
+	if want := DefaultTools(); !reflect.DeepEqual(caseDef.Tools, want) {
+		t.Fatalf("tools = %#v, want %#v", caseDef.Tools, want)
+	}
+}
+
+func TestLoadUsesConfiguredTools(t *testing.T) {
+	caseDir := t.TempDir()
+	content := `version: 1
+id: uses_search_text
+prompt: hi
+tools:
+  - search_text
+  - read_file
+  - write_file
+scoring:
+  deductions: []
+  bonuses: []
+`
+	if err := os.WriteFile(filepath.Join(caseDir, "case.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rootFSDir := filepath.Join(caseDir, DefaultRootFSRelDir())
+	if err := os.MkdirAll(rootFSDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootFSDir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	caseDef, err := LoadDir(caseDir)
+	if err != nil {
+		t.Fatalf("LoadDir returned error: %v", err)
+	}
+	want := []string{ToolSearchText, ToolReadFile, ToolWriteFile}
+	if !reflect.DeepEqual(caseDef.Tools, want) {
+		t.Fatalf("tools = %#v, want %#v", caseDef.Tools, want)
+	}
+}
+
+func TestLoadNormalizesUsedToolCheckFields(t *testing.T) {
+	caseDir := t.TempDir()
+	content := `version: 1
+id: used_tool_check
+prompt: hi
+scoring:
+  deductions: []
+  bonuses:
+    - name: B1
+      points: 5
+      description: used search
+      check:
+        type: used_tool
+        tool: " search_text "
+        path: "./vendor/"
+        query: " FetchDocument "
+        before_first_write: true
+`
+	if err := os.WriteFile(filepath.Join(caseDir, "case.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rootFSDir := filepath.Join(caseDir, DefaultRootFSRelDir())
+	if err := os.MkdirAll(rootFSDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootFSDir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	caseDef, err := LoadDir(caseDir)
+	if err != nil {
+		t.Fatalf("LoadDir returned error: %v", err)
+	}
+	check := caseDef.Scoring.Bonuses[0].Check
+	if got := check.Tool; got != ToolSearchText {
+		t.Fatalf("tool = %q, want %q", got, ToolSearchText)
+	}
+	if got := check.Path; got != "vendor" {
+		t.Fatalf("path = %q, want %q", got, "vendor")
+	}
+	if got := check.Query; got != "FetchDocument" {
+		t.Fatalf("query = %q, want %q", got, "FetchDocument")
+	}
+	if !check.BeforeFirstWrite {
+		t.Fatal("before_first_write = false, want true")
+	}
+}
+
+func TestLoadRejectsUnsupportedTools(t *testing.T) {
+	caseDir := t.TempDir()
+	content := `version: 1
+id: bad_tool
+prompt: hi
+tools:
+  - shell
+scoring:
+  deductions: []
+  bonuses: []
+`
+	if err := os.WriteFile(filepath.Join(caseDir, "case.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rootFSDir := filepath.Join(caseDir, DefaultRootFSRelDir())
+	if err := os.MkdirAll(rootFSDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootFSDir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadDir(caseDir); err == nil {
+		t.Fatal("LoadDir succeeded, want error for unsupported tool")
+	}
 }
 
 func TestLoadRejectsEmptyRootFS(t *testing.T) {
@@ -310,6 +425,30 @@ func TestDefaultScaffoldsIncludeExpectedRootFSFiles(t *testing.T) {
 		return
 	}
 	t.Fatal("default scaffold not found")
+}
+
+func TestDefaultScaffoldsIncludeBuiltInCaseSet(t *testing.T) {
+	scaffolds, err := DefaultScaffolds()
+	if err != nil {
+		t.Fatalf("DefaultScaffolds returned error: %v", err)
+	}
+
+	want := []string{
+		"benchmarks/read_write_ratio_sample/case.yaml",
+		"benchmarks/style_required_reads/case.yaml",
+	}
+	for _, caseRelPath := range want {
+		found := false
+		for _, scaffold := range scaffolds {
+			if scaffold.CaseRelPath == caseRelPath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("default scaffolds missing %q", caseRelPath)
+		}
+	}
 }
 
 func containsKeys(files map[string]string, want []string) bool {

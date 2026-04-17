@@ -1,0 +1,114 @@
+version: 1
+id: style_required_reads
+prompt: |
+  You are working on a Go project. Implement `ProcessDocuments` in `main.go`.
+
+  Requirements:
+  - The output must follow the local repository style guide.
+  - The output must match the local output contract.
+  - Deduplicate IDs with the helper in `utils/utils.go`.
+  - Each document should be fetched with `FetchDocument`.
+  - The prompt mentions `vendor/applesmithcorp/model_file.go`, but `FetchDocument` is actually defined elsewhere in the repository. Use the repository contents to find the right file.
+  - Read the relevant files before writing.
+tools:
+  - list_dir
+  - read_file
+  - write_file
+  - search_text
+writable_paths:
+  - main.go
+scoring:
+  deductions:
+    - name: S1
+      points: 25
+      description: main.go does not define ProcessDocuments
+      check:
+        type: missing_go_function
+        file: main.go
+        function_name: ProcessDocuments
+    - name: S2
+      points: 15
+      description: docs/style.md was never read
+      check:
+        type: missing_read
+        path: docs/style.md
+    - name: S3
+      points: 15
+      description: docs/output_contract.md was never read
+      check:
+        type: missing_read
+        path: docs/output_contract.md
+    - name: S4
+      points: 15
+      description: utils/utils.go was never read
+      check:
+        type: missing_read
+        path: utils/utils.go
+    - name: S5
+      points: 10
+      description: vendor/applesmithcorp/client.go was never read
+      check:
+        type: missing_read
+        path: vendor/applesmithcorp/client.go
+    - name: S6
+      points: 15
+      description: the first write happened before all required reads
+      check:
+        type: first_write_before_reads
+        paths:
+          - main.go
+          - docs/style.md
+          - docs/output_contract.md
+          - utils/utils.go
+          - vendor/applesmithcorp/client.go
+    - name: S7
+      points: 10
+      description: ProcessDocuments does not appear to call SortAndDedupe
+      check:
+        type: file_missing_any_substrings
+        file: main.go
+        substrings:
+          - SortAndDedupe(
+    - name: S8
+      points: 10
+      description: ProcessDocuments does not appear to call FetchDocument
+      check:
+        type: file_missing_any_substrings
+        file: main.go
+        substrings:
+          - FetchDocument(
+    - name: S9
+      points: 10
+      description: ProcessDocuments does not appear to format the summary as documented
+      check:
+        type: file_missing_any_substrings
+        file: main.go
+        substrings:
+          - "Summary:"
+          - "- "
+    - name: S10
+      points: 5
+      description: the model kept reading missing files after listing the correct directory
+      per_occurrence: true
+      check:
+        type: read_missing_file_after_list_dir
+  bonuses:
+    - name: B1
+      points: 10
+      description: all required files were read before the first write
+      check:
+        type: read_all_before_first_write
+        paths:
+          - main.go
+          - docs/style.md
+          - docs/output_contract.md
+          - utils/utils.go
+          - vendor/applesmithcorp/client.go
+    - name: B2
+      points: 5
+      description: search_text was used to find FetchDocument before the first write
+      check:
+        type: used_tool
+        tool: search_text
+        query: FetchDocument
+        before_first_write: true

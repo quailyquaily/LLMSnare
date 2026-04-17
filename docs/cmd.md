@@ -2,7 +2,7 @@
 
 ## Initialize
 
-Generate a config file plus the built-in benchmark case:
+Generate a config file plus the built-in benchmark cases:
 
 ```bash
 llmsnare init
@@ -11,8 +11,8 @@ llmsnare init
 If `--config` is omitted, `init` writes to:
 
 - `<default_config_dir>/config.yaml`
-- `<default_config_dir>/benchmarks/read_write_ratio_sample/case.yaml`
-- `<default_config_dir>/benchmarks/read_write_ratio_sample/rootfs/...`
+- `<default_config_dir>/benchmarks/<built_in_case>/case.yaml`
+- `<default_config_dir>/benchmarks/<built_in_case>/rootfs/...`
 
 Or write into a custom location:
 
@@ -23,8 +23,8 @@ llmsnare init --config ./config.yaml
 This creates:
 
 - `config.yaml`
-- `benchmarks/read_write_ratio_sample/case.yaml`
-- `benchmarks/read_write_ratio_sample/rootfs/...`
+- `benchmarks/<built_in_case>/case.yaml`
+- `benchmarks/<built_in_case>/rootfs/...`
 
 ## List Cases
 

@@ -12,6 +12,10 @@ version: 1
 id: example_case
 prompt: |
   Your benchmark prompt goes here.
+tools:
+  - list_dir
+  - read_file
+  - write_file
 writable_paths:
   - main.go
 scoring:
@@ -26,6 +30,7 @@ scoring:
 | `version` | integer | 是 | 当前固定为 `1`。 |
 | `id` | string | 是 | case 标识，会出现在运行结果里。 |
 | `prompt` | string | 是 | 发给模型的完整任务提示词。 |
+| `tools` | array[string] | 否 | 本 case 暴露给模型的工具列表；省略时默认是 `list_dir`、`read_file`、`write_file`。 |
 | `writable_paths` | array[string] | 否 | 预留字段；当前主要用于表达可写目标。 |
 | `scoring` | object | 是 | 扣分和加分规则。 |
 
@@ -43,6 +48,17 @@ example_case/
 ```
 
 `rootfs/` 会被完整加载进内存。运行时的 `list_dir`、`read_file`、`write_file` 都只操作这份内存里的 mock 文件系统，不会直接改真实目录。
+
+## Tools
+
+当前支持的工具名：
+
+- `list_dir`
+- `read_file`
+- `write_file`
+- `search_text`
+
+`search_text` 会在指定文件或目录范围内做子串搜索。`path` 可选；省略时默认搜索整个 `rootfs/`。
 
 ## Scoring
 
@@ -109,6 +125,10 @@ prompt: |
   - Match any existing formatting convention you find in the codebase.
 
   Use the provided tools to read files before writing. Do not write to any file you have not first read.
+tools:
+  - list_dir
+  - read_file
+  - write_file
 writable_paths:
   - main.go
 scoring:
