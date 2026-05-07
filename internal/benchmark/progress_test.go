@@ -2,7 +2,6 @@ package benchmark
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -321,81 +320,6 @@ func TestRunWithClientPassesExplicitTemperature(t *testing.T) {
 	}
 }
 
-func TestAssistantToolReplayMessagePreservesToolCallsAndContent(t *testing.T) {
-	toolCalls := []uniai.ToolCall{
-		{
-			ID:               "call_2|ts:encoded",
-			Type:             "function",
-			ThoughtSignature: "sig_xyz",
-			Function: uniai.ToolCallFunction{
-				Name:      "read_file",
-				Arguments: `{"path":"main.go"}`,
-			},
-		},
-	}
-	msg := assistantToolReplayMessage("inspect", toolCalls)
-	if msg.Role != uniai.RoleAssistant {
-		t.Fatalf("message role = %q, want %q", msg.Role, uniai.RoleAssistant)
-	}
-	if msg.Content != "inspect" {
-		t.Fatalf("message content = %q, want %q", msg.Content, "inspect")
-	}
-	if len(msg.ToolCalls) != 1 {
-		t.Fatalf("tool calls = %d, want 1", len(msg.ToolCalls))
-	}
-	if got := msg.ToolCalls[0].ThoughtSignature; got != "sig_xyz" {
-		t.Fatalf("thought signature = %q, want %q", got, "sig_xyz")
-	}
-}
-
-func TestReplayToolCallsForProviderBackfillsGeminiBatchSignatures(t *testing.T) {
-	toolCalls := replayToolCallsForProvider("gemini", []uniai.ToolCall{
-		{
-			ID:               "call_1",
-			Type:             "function",
-			ThoughtSignature: "sig_batch",
-			Function: uniai.ToolCallFunction{
-				Name:      "read_file",
-				Arguments: `{"path":"main.go"}`,
-			},
-		},
-		{
-			ID:   "call_2",
-			Type: "function",
-			Function: uniai.ToolCallFunction{
-				Name:      "read_file",
-				Arguments: `{"path":"utils.go"}`,
-			},
-		},
-	})
-	if len(toolCalls) != 2 {
-		t.Fatalf("tool calls = %d, want 2", len(toolCalls))
-	}
-	if got := toolCalls[1].ThoughtSignature; got != "sig_batch" {
-		t.Fatalf("second thought signature = %q, want %q", got, "sig_batch")
-	}
-}
-
-func TestReplayToolCallsForProviderDecodesGeminiSignatureFromID(t *testing.T) {
-	encodedID := "call_2|ts:" + base64.RawURLEncoding.EncodeToString([]byte("sig_xyz"))
-	toolCalls := replayToolCallsForProvider("gemini", []uniai.ToolCall{
-		{
-			ID:   encodedID,
-			Type: "function",
-			Function: uniai.ToolCallFunction{
-				Name:      "read_file",
-				Arguments: `{"path":"main.go"}`,
-			},
-		},
-	})
-	if len(toolCalls) != 1 {
-		t.Fatalf("tool calls = %d, want 1", len(toolCalls))
-	}
-	if got := toolCalls[0].ThoughtSignature; got != "sig_xyz" {
-		t.Fatalf("thought signature = %q, want %q", got, "sig_xyz")
-	}
-}
-
 func TestToolResultMessageForProviderWrapsGeminiListDirAsObject(t *testing.T) {
 	msg, err := toolResultMessageForProvider("gemini", uniai.ToolCall{
 		ID: "call_2",
@@ -438,6 +362,59 @@ func TestToolResultMessageForProviderKeepsOpenAIListDirPayload(t *testing.T) {
 	}
 	if msg.Content != `["main.go","utils"]` {
 		t.Fatalf("payload = %q, want raw model output", msg.Content)
+	}
+}
+
+func TestRunWithClientPreservesAssistantReasoningContentIntoNextRound(t *testing.T) {
+	caseDef := loadGoProcessDocumentsCaseForTest(t)
+	toolCall := uniai.ToolCall{
+		ID:   "call_read_main",
+		Type: "function",
+		Function: uniai.ToolCallFunction{
+			Name:      "read_file",
+			Arguments: `{"path":"main.go"}`,
+		},
+	}
+	client := &scriptedRecordingChatClient{
+		results: []*uniai.ChatResult{
+			{
+				Text: "fallback text",
+				Messages: []uniai.Message{
+					{
+						Role:             uniai.RoleAssistant,
+						Content:          "inspect",
+						ReasoningContent: "real reasoning",
+						ToolCalls:        []uniai.ToolCall{toolCall},
+					},
+				},
+				ToolCalls: []uniai.ToolCall{toolCall},
+			},
+			{Text: "done"},
+		},
+	}
+
+	result, err := NewRunner().RunWithClient(
+		context.Background(),
+		caseDef,
+		"openai_profile",
+		config.Profile{Provider: "openai", Model: "deepseek-chat"},
+		client,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error %q", result.Error)
+	}
+	if len(client.reqs) != 2 {
+		t.Fatalf("requests = %d, want 2", len(client.reqs))
+	}
+	if len(client.reqs[1].Messages) < 3 {
+		t.Fatalf("second request messages = %d, want at least 3", len(client.reqs[1].Messages))
+	}
+	msg := client.reqs[1].Messages[1]
+	if msg.Content != "inspect" || msg.ReasoningContent != "real reasoning" {
+		t.Fatalf("assistant replay message = %#v, want content and reasoning_content preserved", msg)
 	}
 }
 
@@ -489,7 +466,7 @@ func TestRunWithClientCarriesGeminiThoughtSignatureIntoNextRound(t *testing.T) {
 	}
 }
 
-func TestRunWithClientBackfillsGeminiParallelToolCallSignaturesIntoNextRound(t *testing.T) {
+func TestRunWithClientKeepsGeminiParallelToolCallSignaturesIntoNextRound(t *testing.T) {
 	caseDef := loadGoProcessDocumentsCaseForTest(t)
 	client := &scriptedRecordingChatClient{
 		results: []*uniai.ChatResult{
@@ -540,8 +517,8 @@ func TestRunWithClientBackfillsGeminiParallelToolCallSignaturesIntoNextRound(t *
 		t.Fatalf("second request messages = %d, want at least 4", len(client.reqs[1].Messages))
 	}
 	got := client.reqs[1].Messages[1].ToolCalls[1].ThoughtSignature
-	if got != "sig_batch" {
-		t.Fatalf("second tool call thought signature = %q, want %q", got, "sig_batch")
+	if got != "" {
+		t.Fatalf("second tool call thought signature = %q, want empty", got)
 	}
 }
 
