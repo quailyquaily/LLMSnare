@@ -16,7 +16,7 @@ const (
 	defaultConfigPath      = "~/.config/llmsnare/config.yaml"
 	defaultTimelineDir     = "~/.local/state/llmsnare/timeline"
 	defaultListenAddress   = "127.0.0.1:8787"
-	defaultTimeout         = 300 * time.Second
+	defaultTimeout         = 600 * time.Second
 	defaultMaxOutputTokens = 4096
 	defaultOpenAIAPI       = "https://api.openai.com/v1"
 	defaultAnthropicAPI    = "https://api.anthropic.com"
