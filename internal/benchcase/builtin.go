@@ -18,6 +18,20 @@ type Scaffold struct {
 	RootFSFiles map[string]string
 }
 
+const builtinSampleGoMod = `module myproject
+
+go 1.26
+`
+
+var builtinRootFSOverlays = map[string]map[string]string{
+	"benchmarks/read_write_ratio_sample/case.yaml": {
+		"go.mod": builtinSampleGoMod,
+	},
+	"benchmarks/style_required_reads/case.yaml": {
+		"go.mod": builtinSampleGoMod,
+	},
+}
+
 func DefaultScaffolds() ([]Scaffold, error) {
 	casePaths, err := builtinCasePaths()
 	if err != nil {
@@ -67,6 +81,9 @@ func loadEmbeddedScaffold(caseRelPath string) (Scaffold, error) {
 	rootFSFiles, err := loadRootFSFilesFromFS(builtinFS, rootFSDir)
 	if err != nil {
 		return Scaffold{}, fmt.Errorf("load embedded rootfs for %q: %w", caseRelPath, err)
+	}
+	for relPath, content := range builtinRootFSOverlays[caseRelPath] {
+		rootFSFiles[relPath] = content
 	}
 
 	return Scaffold{

@@ -419,7 +419,7 @@ func TestDefaultScaffoldsIncludeExpectedRootFSFiles(t *testing.T) {
 		if scaffold.CaseRelPath != BuiltinCaseRelPath {
 			continue
 		}
-		if want := []string{"docs/format.txt", "main.go"}; !containsKeys(scaffold.RootFSFiles, want) {
+		if want := []string{"docs/format.txt", "go.mod", "main.go"}; !containsKeys(scaffold.RootFSFiles, want) {
 			t.Fatalf("default scaffold rootfs files = %#v, want keys %#v", reflect.ValueOf(scaffold.RootFSFiles).MapKeys(), want)
 		}
 		return
@@ -447,6 +447,18 @@ func TestDefaultScaffoldsIncludeBuiltInCaseSet(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("default scaffolds missing %q", caseRelPath)
+		}
+	}
+}
+
+func TestDefaultScaffoldsIncludeGoMod(t *testing.T) {
+	scaffolds, err := DefaultScaffolds()
+	if err != nil {
+		t.Fatalf("DefaultScaffolds returned error: %v", err)
+	}
+	for _, scaffold := range scaffolds {
+		if got := scaffold.RootFSFiles["go.mod"]; got != builtinSampleGoMod {
+			t.Fatalf("%s go.mod = %q, want %q", scaffold.CaseRelPath, got, builtinSampleGoMod)
 		}
 	}
 }
