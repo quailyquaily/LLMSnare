@@ -17,7 +17,10 @@ import (
 	"llmsnare/internal/storage"
 )
 
-const maxTimelineEntries = 1024
+const (
+	maxTimelineEntries         = 1024
+	internalServerErrorMessage = "internal server error"
+)
 
 //go:embed openapi.yaml
 var openAPISpec []byte
@@ -135,7 +138,7 @@ func (s *Server) handleTimelines(w http.ResponseWriter, r *http.Request) {
 
 	version, err := s.store.AllVersion()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": internalServerErrorMessage})
 		return
 	}
 	body, err := s.cachedJSON(cacheKeyAllTimelines(limit, filter), version, func() (any, error) {
@@ -146,7 +149,7 @@ func (s *Server) handleTimelines(w http.ResponseWriter, r *http.Request) {
 		return map[string]any{"profiles": s.projectTimelineGroups(data)}, nil
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": internalServerErrorMessage})
 		return
 	}
 	writeJSONBytes(w, http.StatusOK, body)
@@ -168,7 +171,7 @@ func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
 
 	version, err := s.store.ProfileVersion(profile)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": internalServerErrorMessage})
 		return
 	}
 	body, err := s.cachedJSON(cacheKeyTimelineProfile(profile, limit, filter), version, func() (any, error) {
@@ -191,7 +194,7 @@ func (s *Server) handleTimelineProfile(w http.ResponseWriter, r *http.Request) {
 		return s.projectTimelineProfile(profile, entries, sample), nil
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": internalServerErrorMessage})
 		return
 	}
 	writeJSONBytes(w, http.StatusOK, body)

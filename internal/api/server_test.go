@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -149,6 +152,41 @@ func TestRoutesHandlesCORSPreflight(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "GET, OPTIONS" {
 		t.Fatalf("Access-Control-Allow-Methods = %q, want %q", got, "GET, OPTIONS")
+	}
+}
+
+func TestInternalServerErrorsDoNotExposeStorageDetails(t *testing.T) {
+	timelineRoot := filepath.Join(t.TempDir(), "timeline")
+	if err := os.WriteFile(timelineRoot, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("create timeline root file: %v", err)
+	}
+
+	server := NewServer(storage.New(timelineRoot))
+	for _, target := range []string{"/v1/timelines", "/v1/timelines/demo"} {
+		t.Run(target, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			rec := httptest.NewRecorder()
+			server.routes().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+			}
+
+			var payload map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if got := payload["error"]; got != "internal server error" {
+				t.Fatalf("error = %q, want generic internal server error", got)
+			}
+
+			body := rec.Body.String()
+			for _, leak := range []string{timelineRoot, "not a directory", "read timeline dir", "stat timeline file"} {
+				if strings.Contains(body, leak) {
+					t.Fatalf("response body exposes storage detail %q: %s", leak, body)
+				}
+			}
+		})
 	}
 }
 

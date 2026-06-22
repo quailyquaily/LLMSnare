@@ -1,12 +1,23 @@
 openapi: 3.0.3
 info:
-  title: llmsnare timeline API
+  title: LLMSnare HTTP API
   version: "1.0.0"
+  description: |
+    Read API for persisted LLMSnare benchmark timelines.
+
+    Timeline responses intentionally omit heavyweight or sensitive run fields:
+    endpoint, error, final_writes, final_response, and tool_calls.
 servers:
   - url: http://127.0.0.1:8787
+tags:
+  - name: health
+  - name: spec
+  - name: timelines
 paths:
   /healthz:
     get:
+      tags: [health]
+      operationId: getHealth
       summary: Health check
       responses:
         "200":
@@ -14,14 +25,12 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                required: [status]
+                $ref: "#/components/schemas/HealthResponse"
   /openapi.yaml:
     get:
-      summary: Fetch the OpenAPI spec
+      tags: [spec]
+      operationId: getOpenAPISpec
+      summary: Fetch this OpenAPI document
       responses:
         "200":
           description: Raw OpenAPI YAML
@@ -31,55 +40,30 @@ paths:
                 type: string
   /v1/timelines:
     get:
+      tags: [timelines]
+      operationId: listTimelines
       summary: List timeline entries for all profiles
       parameters:
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            minimum: 0
-            maximum: 1024
-          required: false
-          description: Return only the last N entries per profile. Defaults to 1024 and is capped at 1024.
-        - in: query
-          name: model
-          schema:
-            type: string
-          required: false
-          description: Return only entries whose model exactly matches this value.
-        - in: query
-          name: model_vendor
-          schema:
-            type: string
-          required: false
-          description: Return only entries whose model_vendor exactly matches this value.
-        - in: query
-          name: inference_provider
-          schema:
-            type: string
-          required: false
-          description: Return only entries whose inference_provider exactly matches this value.
-        - in: query
-          name: case_id
-          schema:
-            type: string
-          required: false
-          description: Return only entries whose case_id exactly matches this value.
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Model"
+        - $ref: "#/components/parameters/ModelVendor"
+        - $ref: "#/components/parameters/InferenceProvider"
+        - $ref: "#/components/parameters/CaseID"
       responses:
         "200":
           description: Timelines keyed by profile name
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  profiles:
-                    type: object
-                    additionalProperties:
-                      $ref: "#/components/schemas/TimelineProfileGroup"
-                required: [profiles]
+                $ref: "#/components/schemas/AllTimelinesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
   /v1/timelines/{profile}:
     get:
+      tags: [timelines]
+      operationId: getTimelineProfile
       summary: List timeline entries for one profile
       parameters:
         - in: path
@@ -87,68 +71,157 @@ paths:
           required: true
           schema:
             type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            minimum: 0
-            maximum: 1024
-          required: false
-          description: Return only the last N entries. Defaults to 1024 and is capped at 1024.
-        - in: query
-          name: model
-          schema:
-            type: string
-          required: false
-          description: Return only entries whose model exactly matches this value.
-        - in: query
-          name: model_vendor
-          schema:
-            type: string
-          required: false
-          description: Return only entries whose model_vendor exactly matches this value.
-        - in: query
-          name: inference_provider
-          schema:
-            type: string
-          required: false
-          description: Return only entries whose inference_provider exactly matches this value.
-        - in: query
-          name: case_id
-          schema:
-            type: string
-          required: false
-          description: Return only entries whose case_id exactly matches this value.
+          description: Profile name from the LLMSnare config.
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Model"
+        - $ref: "#/components/parameters/ModelVendor"
+        - $ref: "#/components/parameters/InferenceProvider"
+        - $ref: "#/components/parameters/CaseID"
       responses:
         "200":
           description: Timeline entries for the requested profile
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  profile:
-                    type: string
-                  provider:
-                    type: string
-                  model:
-                    type: string
-                  model_vendor:
-                    type: string
-                  inference_provider:
-                    type: string
-                  entries:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/TimelineEntry"
-                required: [profile, provider, model, model_vendor, inference_provider, entries]
+                $ref: "#/components/schemas/TimelineProfileResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 components:
+  parameters:
+    Limit:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 1024
+      description: |
+        Return the latest N matching entries. Defaults to 1024.
+        The server caps 0 and values above 1024 to 1024. Negative and
+        non-integer values return 400.
+    Model:
+      in: query
+      name: model
+      required: false
+      schema:
+        type: string
+      description: Return only entries whose model exactly matches this value.
+    ModelVendor:
+      in: query
+      name: model_vendor
+      required: false
+      schema:
+        type: string
+      description: Return only entries whose model_vendor exactly matches this value.
+    InferenceProvider:
+      in: query
+      name: inference_provider
+      required: false
+      schema:
+        type: string
+      description: Return only entries whose inference_provider exactly matches this value.
+    CaseID:
+      in: query
+      name: case_id
+      required: false
+      schema:
+        type: string
+      description: Return only entries whose case_id exactly matches this value.
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalServerError:
+      description: Storage or encoding error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          example: ok
+      required: [status]
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+      required: [error]
+    AllTimelinesResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        profiles:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TimelineProfileGroup"
+      required: [profiles]
+    TimelineProfileGroup:
+      type: object
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        model_vendor:
+          type: string
+        inference_provider:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineEntry"
+      required:
+        - provider
+        - model
+        - model_vendor
+        - inference_provider
+        - entries
+    TimelineProfileResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        profile:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        model_vendor:
+          type: string
+        inference_provider:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineEntry"
+      required:
+        - profile
+        - provider
+        - model
+        - model_vendor
+        - inference_provider
+        - entries
     TimelineEntry:
       type: object
+      additionalProperties: false
       properties:
         run_id:
           type: string
+          description: UUIDv7 for new entries. Legacy rows may contain their previous timeline id.
         timestamp:
           type: string
           format: date-time
@@ -178,7 +251,7 @@ components:
         bonuses:
           type: array
           items:
-            $ref: "#/components/schemas/BonusAdjustment"
+            $ref: "#/components/schemas/ScoreAdjustment"
       required:
         - timestamp
         - finished_at
@@ -190,29 +263,9 @@ components:
         - max_score
         - normalized_score
         - metrics
-    TimelineProfileGroup:
-      type: object
-      properties:
-        provider:
-          type: string
-        model:
-          type: string
-        model_vendor:
-          type: string
-        inference_provider:
-          type: string
-        entries:
-          type: array
-          items:
-            $ref: "#/components/schemas/TimelineEntry"
-      required:
-        - provider
-        - model
-        - model_vendor
-        - inference_provider
-        - entries
     Metrics:
       type: object
+      additionalProperties: false
       properties:
         read_file_calls:
           type: integer
@@ -230,8 +283,11 @@ components:
         - read_file_calls
         - write_file_calls
         - list_dir_calls
+        - read_write_ratio
+        - pre_write_read_coverage
     ScoreAdjustment:
       type: object
+      additionalProperties: false
       properties:
         name:
           type: string
@@ -239,14 +295,7 @@ components:
           type: integer
         description:
           type: string
-      required: [name, points, description]
-    BonusAdjustment:
-      type: object
-      properties:
-        name:
-          type: string
-        points:
-          type: integer
-        description:
-          type: string
-      required: [name, points, description]
+      required:
+        - name
+        - points
+        - description
