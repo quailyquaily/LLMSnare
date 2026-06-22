@@ -1,0 +1,5 @@
+Column order for v3 inventory reports:
+
+1. SKU
+2. Qty
+3. Location

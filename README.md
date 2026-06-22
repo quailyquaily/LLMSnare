@@ -130,6 +130,7 @@ Current built-ins:
 
 - `read_write_ratio_sample`
 - `style_required_reads`
+- `spec_driven_inventory`
 
 ## HTTP API
 

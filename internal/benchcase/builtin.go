@@ -30,6 +30,9 @@ var builtinRootFSOverlays = map[string]map[string]string{
 	"benchmarks/style_required_reads/case.yaml": {
 		"go.mod": builtinSampleGoMod,
 	},
+	"benchmarks/spec_driven_inventory/case.yaml": {
+		"go.mod": builtinSampleGoMod,
+	},
 }
 
 func DefaultScaffolds() ([]Scaffold, error) {
