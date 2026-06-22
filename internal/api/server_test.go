@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -156,10 +154,7 @@ func TestRoutesHandlesCORSPreflight(t *testing.T) {
 }
 
 func TestInternalServerErrorsDoNotExposeStorageDetails(t *testing.T) {
-	timelineRoot := filepath.Join(t.TempDir(), "timeline")
-	if err := os.WriteFile(timelineRoot, []byte("not a directory"), 0o644); err != nil {
-		t.Fatalf("create timeline root file: %v", err)
-	}
+	timelineRoot := string([]byte{'b', 'a', 'd', 0, 't', 'i', 'm', 'e', 'l', 'i', 'n', 'e'})
 
 	server := NewServer(storage.New(timelineRoot))
 	for _, target := range []string{"/v1/timelines", "/v1/timelines/demo"} {
@@ -181,7 +176,7 @@ func TestInternalServerErrorsDoNotExposeStorageDetails(t *testing.T) {
 			}
 
 			body := rec.Body.String()
-			for _, leak := range []string{timelineRoot, "not a directory", "read timeline dir", "stat timeline file"} {
+			for _, leak := range []string{timelineRoot, "invalid argument", "read timeline dir", "stat timeline file"} {
 				if strings.Contains(body, leak) {
 					t.Fatalf("response body exposes storage detail %q: %s", leak, body)
 				}
