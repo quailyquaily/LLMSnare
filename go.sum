@@ -43,8 +43,8 @@ github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c h1:+mdjkGKdHQG3305AYmd
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c/go.mod h1:7rwL4CYBLnjLxUqIJNnCWiEdr3bn6IUYi15bNlnbCCU=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/quailyquaily/uniai v0.1.23 h1:vjW7cT1vA68UCEYwyxIy9HVdJggbqrUySVYOc6ujWjQ=
-github.com/quailyquaily/uniai v0.1.23/go.mod h1:C3kQuLcZ+QvU1+uRmRXkHx3Jo8gaZxa6Da54aUI9nj4=
+github.com/quailyquaily/uniai v0.1.40 h1:VouJipu7DgNHkLN5B5RsmJvn9SVbTpZlf4FM5yldTyc=
+github.com/quailyquaily/uniai v0.1.40/go.mod h1:C3kQuLcZ+QvU1+uRmRXkHx3Jo8gaZxa6Da54aUI9nj4=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rogpeppe/go-internal v1.12.0 h1:exVL4IDcn6na9z1rAb56Vxr+CgyK3nn3O+epU5NdKM8=
