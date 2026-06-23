@@ -108,6 +108,95 @@ func TestFileMissingAnySubstrings(t *testing.T) {
 	}
 }
 
+func TestGoFunctionMissingAnySubstrings(t *testing.T) {
+	stubWithHelpersElsewhere := `package main
+
+import (
+	"github.com/stockvault"
+	"myproject/internal/filter"
+	"myproject/pkg/aggregate"
+	"myproject/pkg/render"
+)
+
+func BuildInventoryReport(skus []string) string {
+	return ""
+}
+
+func main() {
+	_, _ = filter.FilterActiveSKUs([]string{"x"}), aggregate.CountByLocation(nil, stockvault.FetchItem)
+	_ = render.FormatInventoryTable(nil)
+}
+`
+	required := []string{"FilterActiveSKUs(", "CountByLocation(", "FormatInventoryTable(", "FetchItem("}
+	if !goFunctionMissingAnySubstrings(stubWithHelpersElsewhere, "BuildInventoryReport", required) {
+		t.Fatal("expected stub function to miss helpers even when main() contains them")
+	}
+
+	implemented := `package main
+
+import (
+	"github.com/stockvault"
+	"myproject/internal/filter"
+	"myproject/pkg/aggregate"
+	"myproject/pkg/render"
+)
+
+func BuildInventoryReport(skus []string) string {
+	filtered := filter.FilterActiveSKUs(skus)
+	rows := aggregate.CountByLocation(filtered, func(sku string) string {
+		return stockvault.FetchItem(sku).Location
+	})
+	return render.FormatInventoryTable(rows)
+}
+`
+	for _, substring := range required {
+		if goFunctionMissingAnySubstrings(implemented, "BuildInventoryReport", []string{substring}) {
+			t.Fatalf("expected implemented function to contain %q", substring)
+		}
+	}
+}
+
+func TestSpecDrivenInventoryHelperChecksIgnoreMainPlaceholders(t *testing.T) {
+	caseDir := filepath.Join("..", "benchcase", "testdata", "builtin", "benchmarks", "spec_driven_inventory")
+	caseDef, err := benchcase.LoadDir(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stubMain := `package main
+
+import (
+	"github.com/stockvault"
+	"myproject/internal/filter"
+	"myproject/pkg/aggregate"
+	"myproject/pkg/render"
+)
+
+func BuildInventoryReport(skus []string) string {
+	return ""
+}
+
+func main() {
+	_, _ = filter.FilterActiveSKUs([]string{"x"}), aggregate.CountByLocation(nil, stockvault.FetchItem)
+	_ = render.FormatInventoryTable(nil)
+}
+`
+	fs := newVirtualFS(caseDef, nowForTest())
+	result := Result{CaseID: caseDef.ID, FinalWrites: map[string]string{"main.go": stubMain}}
+	scored := scoreResult(caseDef, result, fs)
+
+	want := map[string]bool{"S2": true, "S3": true, "S4": true, "S5": true}
+	got := map[string]bool{}
+	for _, item := range scored.Deductions {
+		got[item.Name] = true
+	}
+	for name := range want {
+		if !got[name] {
+			t.Fatalf("deduction %s missing from %#v", name, scored.Deductions)
+		}
+	}
+}
+
 func TestFileMatchesAnyRegex(t *testing.T) {
 	content := "sort.Strings(items)"
 	if !fileMatchesAnyRegex(content, []string{`sort\.(Strings|Slice)`, `seen\s*:=`}) {

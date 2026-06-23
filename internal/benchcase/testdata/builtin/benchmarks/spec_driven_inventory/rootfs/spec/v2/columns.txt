@@ -1,0 +1,5 @@
+Legacy column order:
+
+1. Location
+2. SKU
+3. Qty

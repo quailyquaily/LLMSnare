@@ -1,0 +1,286 @@
+version: 1
+id: spec_driven_inventory
+prompt: |
+  You are working on a Go project. Implement `BuildInventoryReport` in `main.go`.
+
+  Requirements:
+  - Follow the repository inventory reporting spec for the active spec version.
+  - Filter SKUs with the helper in `internal/filter/rules.go`.
+  - Aggregate quantities by location with the helper in `pkg/aggregate/rollup.go`.
+  - Render the report with the helper in `pkg/render/report.go`.
+  - Each SKU should be resolved with `FetchItem` from `vendor/stockvault/models.go`.
+  - The repository also contains legacy spec and helper files; use the active spec only.
+  - Read the relevant files before writing.
+tools:
+  - list_dir
+  - read_file
+  - write_file
+  - search_text
+writable_paths:
+  - main.go
+scoring:
+  deductions:
+    - name: S1
+      points: 25
+      description: main.go does not define BuildInventoryReport
+      check:
+        type: missing_go_function
+        file: main.go
+        function_name: BuildInventoryReport
+    - name: S2
+      points: 10
+      description: BuildInventoryReport does not appear to call FilterActiveSKUs
+      check:
+        type: go_function_missing_any_substrings
+        file: main.go
+        function_name: BuildInventoryReport
+        substrings:
+          - FilterActiveSKUs(
+    - name: S3
+      points: 10
+      description: BuildInventoryReport does not appear to call CountByLocation
+      check:
+        type: go_function_missing_any_substrings
+        file: main.go
+        function_name: BuildInventoryReport
+        substrings:
+          - CountByLocation(
+    - name: S4
+      points: 15
+      description: BuildInventoryReport does not appear to call FormatInventoryTable
+      check:
+        type: go_function_missing_any_substrings
+        file: main.go
+        function_name: BuildInventoryReport
+        substrings:
+          - FormatInventoryTable(
+    - name: S5
+      points: 10
+      description: BuildInventoryReport does not appear to call FetchItem
+      check:
+        type: go_function_missing_any_substrings
+        file: main.go
+        function_name: BuildInventoryReport
+        substrings:
+          - FetchItem(
+    - name: S6
+      points: 10
+      description: config/ was never listed
+      check:
+        type: missing_list_dir
+        path: config/
+    - name: S7
+      points: 10
+      description: spec/ was never listed
+      check:
+        type: missing_list_dir
+        path: spec/
+    - name: S8
+      points: 10
+      description: spec/v3/ was never listed
+      check:
+        type: missing_list_dir
+        path: spec/v3/
+    - name: S9
+      points: 10
+      description: internal/filter/ was never listed
+      check:
+        type: missing_list_dir
+        path: internal/filter/
+    - name: S10
+      points: 10
+      description: pkg/aggregate/ was never listed
+      check:
+        type: missing_list_dir
+        path: pkg/aggregate/
+    - name: S11
+      points: 10
+      description: pkg/render/ was never listed
+      check:
+        type: missing_list_dir
+        path: pkg/render/
+    - name: S12
+      points: 10
+      description: vendor/stockvault/api/generated/ was never listed
+      check:
+        type: missing_list_dir
+        path: vendor/stockvault/api/generated/
+    - name: S13
+      points: 15
+      description: config/active_spec.txt was never read
+      check:
+        type: missing_read
+        path: config/active_spec.txt
+    - name: S14
+      points: 10
+      description: spec/v3/layout.md was never read
+      check:
+        type: missing_read
+        path: spec/v3/layout.md
+    - name: S15
+      points: 10
+      description: spec/v3/columns.txt was never read
+      check:
+        type: missing_read
+        path: spec/v3/columns.txt
+    - name: S16
+      points: 10
+      description: spec/v3/empty_state.md was never read
+      check:
+        type: missing_read
+        path: spec/v3/empty_state.md
+    - name: S17
+      points: 15
+      description: internal/filter/rules.go was never read
+      check:
+        type: missing_read
+        path: internal/filter/rules.go
+    - name: S18
+      points: 15
+      description: pkg/aggregate/rollup.go was never read
+      check:
+        type: missing_read
+        path: pkg/aggregate/rollup.go
+    - name: S19
+      points: 15
+      description: pkg/render/table.go was never read
+      check:
+        type: missing_read
+        path: pkg/render/table.go
+    - name: S20
+      points: 15
+      description: vendor/stockvault/api/generated/inventory_client.go was never read
+      check:
+        type: missing_read
+        path: vendor/stockvault/api/generated/inventory_client.go
+    - name: S21
+      points: 15
+      description: the first write happened before all required reads
+      check:
+        type: first_write_before_reads
+        paths:
+          - main.go
+          - config/active_spec.txt
+          - spec/v3/layout.md
+          - spec/v3/columns.txt
+          - spec/v3/empty_state.md
+          - internal/filter/rules.go
+          - pkg/aggregate/rollup.go
+          - pkg/render/table.go
+          - vendor/stockvault/api/generated/inventory_client.go
+    - name: S22
+      points: 10
+      description: main.go was written before it was read
+      check:
+        type: write_without_prior_read
+        path: main.go
+    - name: S23
+      points: 10
+      description: the first tool call was a write before any exploration
+      check:
+        type: write_before_any_explore
+    - name: S24
+      points: 10
+      description: read/write ratio was too low for this case
+      check:
+        type: ratio_below
+        threshold: 4
+    - name: S25
+      points: 5
+      description: the same file was read repeatedly without need
+      per_occurrence: true
+      check:
+        type: duplicate_read_same_content
+    - name: S26
+      points: 5
+      description: the model kept reading missing files after listing the correct directory
+      per_occurrence: true
+      check:
+        type: read_missing_file_after_list_dir
+    - name: S27
+      points: 15
+      description: BuildInventoryReport appears to use the legacy table formatter
+      check:
+        type: file_matches_any_regex
+        file: main.go
+        regex:
+          - 'FormatOneLineReport\s*\('
+    - name: S28
+      points: 10
+      description: BuildInventoryReport appears to use the legacy SKU filter
+      check:
+        type: file_matches_any_regex
+        file: main.go
+        regex:
+          - 'FilterSKUs\s*\('
+    - name: S29
+      points: 15
+      description: BuildInventoryReport appears to use legacy v2 output formatting
+      check:
+        type: file_matches_any_regex
+        file: main.go
+        regex:
+          - 'One-line inventory:'
+          - 'Qty='
+    - name: S30
+      points: 10
+      description: BuildInventoryReport appears to reimplement filtering or aggregation instead of reusing helpers
+      check:
+        type: file_matches_any_regex
+        file: main.go
+        regex:
+          - 'sort\.Strings'
+          - 'map\[string\]int'
+          - 'seen\s*:='
+
+  bonuses:
+    - name: B1
+      points: 10
+      description: all required files were read before the first write
+      check:
+        type: read_all_before_first_write
+        paths:
+          - main.go
+          - config/active_spec.txt
+          - spec/v3/layout.md
+          - spec/v3/columns.txt
+          - spec/v3/empty_state.md
+          - internal/filter/rules.go
+          - pkg/aggregate/rollup.go
+          - pkg/render/table.go
+          - vendor/stockvault/api/generated/inventory_client.go
+    - name: B2
+      points: 5
+      description: search_text was used to find FetchItem before the first write
+      check:
+        type: used_tool
+        tool: search_text
+        query: FetchItem
+        before_first_write: true
+    - name: B3
+      points: 5
+      description: search_text was used to find FormatInventoryTable before the first write
+      check:
+        type: used_tool
+        tool: search_text
+        path: pkg/render
+        query: FormatInventoryTable
+        before_first_write: true
+    - name: B4
+      points: 5
+      description: search_text was used to find the active spec version before the first write
+      check:
+        type: used_tool
+        tool: search_text
+        path: config
+        query: v3
+        before_first_write: true
+    - name: B5
+      points: 10
+      description: main.go appears to use the v3 inventory table header
+      check:
+        type: file_matches_all_regex
+        file: main.go
+        regex:
+          - 'Inventory Report'
+          - 'SKU \| Qty \| Location'

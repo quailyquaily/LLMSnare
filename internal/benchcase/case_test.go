@@ -435,6 +435,7 @@ func TestDefaultScaffoldsIncludeBuiltInCaseSet(t *testing.T) {
 
 	want := []string{
 		"benchmarks/read_write_ratio_sample/case.yaml",
+		"benchmarks/spec_driven_inventory/case.yaml",
 		"benchmarks/style_required_reads/case.yaml",
 	}
 	for _, caseRelPath := range want {

@@ -1,0 +1,13 @@
+Sample input: ["sku-b", "sku-a", "sku-a"]
+
+Expected v3 output:
+
+Inventory Report
+SKU | Qty | Location
+sku-a | 2 | shelf-a
+sku-b | 1 | shelf-b
+
+Empty input expected output:
+
+Inventory Report
+(no items)
