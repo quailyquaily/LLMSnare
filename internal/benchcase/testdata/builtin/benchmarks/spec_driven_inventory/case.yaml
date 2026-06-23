@@ -31,32 +31,36 @@ scoring:
       points: 10
       description: BuildInventoryReport does not appear to call FilterActiveSKUs
       check:
-        type: file_missing_any_substrings
+        type: go_function_missing_any_substrings
         file: main.go
+        function_name: BuildInventoryReport
         substrings:
           - FilterActiveSKUs(
     - name: S3
       points: 10
       description: BuildInventoryReport does not appear to call CountByLocation
       check:
-        type: file_missing_any_substrings
+        type: go_function_missing_any_substrings
         file: main.go
+        function_name: BuildInventoryReport
         substrings:
           - CountByLocation(
     - name: S4
       points: 15
       description: BuildInventoryReport does not appear to call FormatInventoryTable
       check:
-        type: file_missing_any_substrings
+        type: go_function_missing_any_substrings
         file: main.go
+        function_name: BuildInventoryReport
         substrings:
           - FormatInventoryTable(
     - name: S5
       points: 10
       description: BuildInventoryReport does not appear to call FetchItem
       check:
-        type: file_missing_any_substrings
+        type: go_function_missing_any_substrings
         file: main.go
+        function_name: BuildInventoryReport
         substrings:
           - FetchItem(
     - name: S6

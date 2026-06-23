@@ -58,6 +58,7 @@ check:
 | `read_all_before_first_write` | 检查指定文件是否都在第一次写入前读完 | `paths` |
 | `file_contains_all` | 检查文件内容是否包含全部子串 | `file`, `substrings` |
 | `file_missing_any_substrings` | 检查文件是否缺少任意一个必需子串 | `file`, `substrings` |
+| `go_function_missing_any_substrings` | 检查 Go 函数体是否缺少任意一个必需子串 | `file`, `function_name`, `substrings` |
 | `file_matches_all_regex` | 检查文件内容是否匹配全部正则模式 | `file`, `regex` |
 | `file_matches_any_regex` | 检查文件内容是否匹配任意一个正则模式 | `file`, `regex` |
 | `missing_go_function` | 检查 Go 文件里是否真的定义了指定顶层函数 | `file`, `function_name` |
@@ -166,6 +167,18 @@ check:
   substrings:
     - SortAndDedupe(
     - FetchDocument(
+```
+
+### `go_function_missing_any_substrings`
+
+```yaml
+check:
+  type: go_function_missing_any_substrings
+  file: main.go
+  function_name: BuildInventoryReport
+  substrings:
+    - FilterActiveSKUs(
+    - CountByLocation(
 ```
 
 ### `file_matches_all_regex`

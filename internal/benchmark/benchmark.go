@@ -851,6 +851,10 @@ func evaluateCheck(ctx evaluationContext, check benchcase.Check) []string {
 		if fileMissingAnySubstrings(ctx.fileContent(check.File), check.Substrings) {
 			return []string{"file is missing required substrings"}
 		}
+	case "go_function_missing_any_substrings":
+		if goFunctionMissingAnySubstrings(ctx.fileContent(check.File), check.FunctionName, check.Substrings) {
+			return []string{fmt.Sprintf("%s is missing required substrings", check.FunctionName)}
+		}
 	case "file_matches_all_regex":
 		if fileMatchesAllRegex(ctx.fileContent(check.File), check.Regex) {
 			return []string{"file matches all required regex patterns"}
@@ -1036,28 +1040,48 @@ func fileMatchesAnyRegex(content string, patterns []string) bool {
 }
 
 func goFileDefinesFunction(source, functionName string) bool {
+	_, ok := goFunctionBodySource(source, functionName)
+	return ok
+}
+
+func goFunctionBodySource(source, functionName string) (string, bool) {
 	if strings.TrimSpace(source) == "" || strings.TrimSpace(functionName) == "" {
-		return false
+		return "", false
 	}
 
-	file, err := parser.ParseFile(token.NewFileSet(), "main.go", source, parser.AllErrors)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", source, parser.AllErrors)
 	if err != nil {
-		return false
+		return "", false
 	}
 
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok {
+		if !ok || fn.Recv != nil || fn.Name == nil || fn.Name.Name != functionName {
 			continue
 		}
-		if fn.Recv != nil || fn.Name == nil || fn.Name.Name != functionName {
-			continue
+		if fn.Body == nil {
+			return "", false
 		}
-		if fn.Body != nil {
-			return true
+		start := fset.Position(fn.Body.Pos()).Offset
+		end := fset.Position(fn.Body.End()).Offset
+		if start < 0 || end > len(source) || start >= end {
+			return "", false
 		}
+		return source[start:end], true
 	}
-	return false
+	return "", false
+}
+
+func goFunctionMissingAnySubstrings(source, functionName string, substrings []string) bool {
+	if len(substrings) == 0 {
+		return false
+	}
+	body, ok := goFunctionBodySource(source, functionName)
+	if !ok {
+		return true
+	}
+	return fileMissingAnySubstrings(body, substrings)
 }
 
 func usedTool(logs []ToolCallLog, check benchcase.Check) bool {
